@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}Review policy - InsureRemind{% endblock %}
+{% block content %}
+<h1 class="h3 mb-3">Review policy <small class="text-muted fs-6">Step 2 of 2</small></h1>
+
+{% if upload.extraction_error %}
+<div class="alert alert-warning"><strong>Automatic reading failed.</strong> {{ upload.extraction_error }} You can still enter the details manually below.</div>
+{% endif %}
+{% if reg_mismatch %}
+<div class="alert alert-danger border-3"><strong>Registration number mismatch!</strong> You entered <code>{{ upload.vehicle_no }}</code> but the document appears to show <code>{{ extracted_reg }}</code>. Check that you uploaded the right document. The entered number will be used.</div>
+{% endif %}
+{% for w in warnings %}<div class="alert alert-warning"><strong>Check:</strong> {{ w }}</div>{% endfor %}
+{% if vehicle %}
+<div class="alert alert-info"><strong>Existing vehicle &mdash; this will be added as a renewal.</strong>
+  Current owner: {{ vehicle.owner.name }} ({{ vehicle.owner.phone }}).
+  {% if latest %}Latest policy: {{ latest.insurer }} {{ latest.policy_number }}, expires {{ latest.expiry_date|date:"d-M-Y" }}.{% endif %}</div>
+{% endif %}
+
+<div class="row g-4">
+  <div class="col-lg-6">
+    <div class="card"><div class="card-header">Document &mdash; {{ upload.vehicle_no }}</div><div class="card-body p-2">
+      {% if upload.is_pdf %}<iframe class="doc-frame" src="{% url 'upload_file' upload.pk %}"></iframe>
+      {% else %}<img class="img-fluid" src="{% url 'upload_file' upload.pk %}" alt="Policy document">{% endif %}
+    </div></div>
+  </div>
+  <div class="col-lg-6">
+    <div class="card"><div class="card-body">
+      <form method="post" novalidate>{% csrf_token %}
+        {% if form.non_field_errors %}<div class="alert alert-danger">{{ form.non_field_errors }}</div>{% endif %}
+        {% for title, fields in form.sections %}
+        <h2 class="h6 text-primary border-bottom pb-1 mt-3">{{ title }}</h2>
+        {% for field in fields %}{% include "partials/field.html" %}{% endfor %}
+        {% endfor %}
+        <script>document.querySelectorAll('.card input:not([type=checkbox]),.card select').forEach(function(e){e.classList.add(e.tagName==='SELECT'?'form-select':'form-control')});</script>
+        <button class="btn btn-success">Confirm &amp; save</button>
+      </form>
+      <form method="post" action="{% url 'upload_discard' upload.pk %}" class="mt-2" onsubmit="return confirm('Discard this upload?')">{% csrf_token %}
+        <button class="btn btn-outline-danger btn-sm">Discard upload</button></form>
+    </div></div>
+  </div>
+</div>
+{% endblock %}

@@ -1,0 +1,76 @@
+{% extends "base.html" %}
+{% block title %}{{ vehicle.registration_no }} - InsureRemind{% endblock %}
+{% block content %}
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+  <h1 class="h3 mb-0">{{ vehicle.registration_no }} <small class="text-muted">{{ vehicle.description }}</small></h1>
+  {% if perms.policies.add_policy %}<a class="btn btn-primary" href="{% url 'upload' %}?vehicle={{ vehicle.pk }}">Upload renewal</a>{% endif %}
+</div>
+<div class="row g-3 mb-4">
+  <div class="col-md-6"><div class="card h-100">
+    <div class="card-header d-flex justify-content-between">Owner {% if perms.policies.change_owner %}<a href="{% url 'owner_edit' owner.pk %}">Edit</a>{% endif %}</div>
+    <div class="card-body"><dl class="row mb-0">
+      <dt class="col-4">Name</dt><dd class="col-8">{{ owner.name }}</dd>
+      <dt class="col-4">Phone</dt><dd class="col-8">{{ owner.phone }}</dd>
+      <dt class="col-4">Email</dt><dd class="col-8">{{ owner.email|default:"-" }}</dd>
+      <dt class="col-4">WhatsApp</dt><dd class="col-8">{% if owner.whatsapp_opt_in %}Opted in{% else %}Not opted in{% endif %}</dd>
+    </dl></div></div></div>
+  <div class="col-md-6"><div class="card h-100">
+    <div class="card-header d-flex justify-content-between">Vehicle {% if perms.policies.change_vehicle %}<a href="{% url 'vehicle_edit' vehicle.pk %}">Edit</a>{% endif %}</div>
+    <div class="card-body"><dl class="row mb-0">
+      <dt class="col-4">Make / model</dt><dd class="col-8">{{ vehicle.description|default:"-" }}</dd>
+      <dt class="col-4">Fuel</dt><dd class="col-8">{{ vehicle.fuel_type|default:"-" }}</dd>
+      <dt class="col-4">Year</dt><dd class="col-8">{{ vehicle.manufacturing_year|default:"-" }}</dd>
+      <dt class="col-4">RTO</dt><dd class="col-8">{{ vehicle.rto_location|default:"-" }}</dd>
+      <dt class="col-4">Registered on</dt><dd class="col-8">{{ vehicle.registration_date|date:"d-M-Y"|default:"-" }}</dd>
+      <dt class="col-4">Usage</dt><dd class="col-8">{{ vehicle.vehicle_usage|default:"-" }}</dd>
+      <dt class="col-4">Chassis no.</dt><dd class="col-8">{{ vehicle.chassis_no|default:"-" }}</dd>
+      <dt class="col-4">Engine no.</dt><dd class="col-8">{{ vehicle.engine_no|default:"-" }}</dd>
+    </dl></div></div></div>
+</div>
+
+<h2 class="h5">Policy history</h2>
+{% for policy in policies %}
+<div class="card mb-3">
+  <div class="card-header d-flex justify-content-between flex-wrap gap-2">
+    <span><strong>{{ policy.insurer }}</strong> &middot; {{ policy.policy_number }} &middot; {{ policy.get_policy_type_display }}
+      {% include "partials/status_badge.html" %}{% if forloop.first %} <span class="badge text-bg-primary">Latest</span>{% endif %}</span>
+    <span class="text-nowrap">
+      {% if policy.document %}<a class="btn btn-sm btn-outline-secondary" href="{% url 'policy_document' policy.pk %}" target="_blank">View document</a>{% endif %}
+      {% if perms.policies.change_policy %}<a class="btn btn-sm btn-outline-primary" href="{% url 'policy_edit' policy.pk %}">Edit</a>{% endif %}
+    </span>
+  </div>
+  <div class="card-body"><div class="row">
+    <div class="col-md-6"><dl class="row mb-0">
+      <dt class="col-5">Period</dt><dd class="col-7">{{ policy.start_date|date:"d-M-Y" }} to {{ policy.expiry_date|date:"d-M-Y" }}</dd>
+      <dt class="col-5">Net premium</dt><dd class="col-7">{% if policy.net_premium is not None %}&#8377; {{ policy.net_premium }}{% else %}-{% endif %}</dd>
+      <dt class="col-5">GST</dt><dd class="col-7">{% if policy.gst_amount is not None %}&#8377; {{ policy.gst_amount }}{% else %}-{% endif %}</dd>
+      <dt class="col-5">Total premium (incl. GST)</dt><dd class="col-7">&#8377; {{ policy.premium }}</dd>
+      <dt class="col-5">NCB</dt><dd class="col-7">{% if policy.ncb_percent is not None %}{{ policy.ncb_percent|floatformat:"-2" }}%{% else %}-{% endif %}</dd>
+    </dl></div>
+    <div class="col-md-6"><div class="small text-muted mb-1">Previous policy</div><dl class="row mb-0">
+      <dt class="col-5">Policy no.</dt><dd class="col-7">{{ policy.previous_policy_number|default:"-" }}</dd>
+      <dt class="col-5">Insurer</dt><dd class="col-7">{{ policy.previous_insurer|default:"-" }}</dd>
+      <dt class="col-5">Type</dt><dd class="col-7">{{ policy.previous_policy_type|default:"-" }}</dd>
+      <dt class="col-5">Period</dt><dd class="col-7">{% if policy.previous_policy_start or policy.previous_policy_end %}{{ policy.previous_policy_start|date:"d-M-Y"|default:"?" }} to {{ policy.previous_policy_end|date:"d-M-Y"|default:"?" }}{% else %}-{% endif %}</dd>
+      <dt class="col-5">NCB</dt><dd class="col-7">{% if policy.previous_ncb_percent is not None %}{{ policy.previous_ncb_percent|floatformat:"-2" }}%{% else %}-{% endif %}</dd>
+      <dt class="col-5">Claims</dt><dd class="col-7">{% if policy.previous_claims_count is not None %}{{ policy.previous_claims_count }}{% else %}-{% endif %}</dd>
+    </dl></div>
+  </div></div>
+</div>
+{% endfor %}
+
+<div class="card">
+  <div class="card-header">Reminders for latest policy</div>
+  <div class="table-responsive"><table class="table table-sm align-middle mb-0">
+    <thead><tr><th>Scheduled</th><th>Days before</th><th>Channel</th><th>To</th><th>Recipient</th><th>Status</th><th>Sent at</th><th>Note</th></tr></thead>
+    <tbody>
+    {% for r in reminders %}
+    <tr><td>{{ r.scheduled_for|date:"d-M-Y" }}</td><td>{{ r.days_before }}</td><td>{{ r.get_channel_display }}</td>
+      <td>{{ r.get_recipient_type_display }}</td><td>{{ r.recipient }}</td>
+      <td><span class="badge text-bg-{% if r.status == 'sent' %}success{% elif r.status == 'failed' %}danger{% elif r.status == 'skipped' %}secondary{% else %}info{% endif %}">{{ r.get_status_display }}</span></td>
+      <td>{{ r.sent_at|date:"d-M-Y H:i"|default:"" }}</td><td class="small text-muted">{{ r.error }}</td></tr>
+    {% empty %}<tr><td colspan="8" class="text-center text-muted py-3">No reminders scheduled.</td></tr>
+    {% endfor %}
+    </tbody></table></div>
+</div>
+{% endblock %}

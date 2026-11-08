@@ -1,0 +1,1 @@
+<span class="badge text-bg-{% if policy.status == 'expired' %}danger{% elif policy.status == 'expiring' %}warning{% else %}success{% endif %}">{{ policy.status_label }}</span>

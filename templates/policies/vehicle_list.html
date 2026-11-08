@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Policies - InsureRemind{% endblock %}
+{% block content %}
+<h1 class="h3 mb-3">Policies</h1>
+<form class="row g-2 mb-3" method="get">
+  <div class="col-md-6"><input class="form-control" name="q" value="{{ q }}" placeholder="Vehicle no, owner name, phone or policy number"></div>
+  <div class="col-md-3"><select class="form-select" name="status">
+    <option value="">All statuses</option>
+    <option value="active"{% if status == 'active' %} selected{% endif %}>Active (&gt; 30 days)</option>
+    <option value="expiring"{% if status == 'expiring' %} selected{% endif %}>Expiring soon (&le; 30 days)</option>
+    <option value="expired"{% if status == 'expired' %} selected{% endif %}>Expired</option>
+  </select></div>
+  <div class="col-md-3"><button class="btn btn-primary">Search</button> <a class="btn btn-outline-secondary" href="{% url 'vehicle_list' %}">Clear</a></div>
+</form>
+<div class="card"><div class="table-responsive"><table class="table table-hover align-middle mb-0">
+  <thead><tr><th>Vehicle</th><th>Make / model</th><th>Owner</th><th>Phone</th><th>Insurer</th><th>Policy no.</th><th>Expiry</th><th>Status</th></tr></thead>
+  <tbody>
+  {% for policy in page %}
+  <tr>
+    <td><a href="{% url 'vehicle_detail' policy.vehicle.pk %}">{{ policy.vehicle.registration_no }}</a></td>
+    <td>{{ policy.vehicle.description }}</td><td>{{ policy.vehicle.owner.name }}</td><td>{{ policy.vehicle.owner.phone }}</td>
+    <td>{{ policy.insurer }}</td><td>{{ policy.policy_number }}</td><td>{{ policy.expiry_date|date:"d-M-Y" }}</td>
+    <td>{% include "partials/status_badge.html" %}</td>
+  </tr>
+  {% empty %}<tr><td colspan="8" class="text-center text-muted py-4">No policies found.</td></tr>
+  {% endfor %}
+  </tbody></table></div></div>
+<div class="mt-3">{% include "partials/pagination.html" %}</div>
+{% endblock %}

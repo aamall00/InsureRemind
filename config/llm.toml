@@ -1,0 +1,23 @@
+# Non-secret LLM settings for policy extraction (committed to git).
+# The API key does NOT go here: set OPENROUTER_API_KEY in .env or the host environment.
+# Overrides: env OPENROUTER_MODEL replaces `model`; env LLM_CONFIG_PATH points to another toml file.
+
+[openrouter]
+# OpenRouter OpenAI-compatible endpoint.
+base_url = "https://openrouter.ai/api/v1"
+# Primary model slug. Check the exact slug at https://openrouter.ai/models
+model = "anthropic/claude-opus-5.5"
+# Tried in order if the primary model fails (OpenRouter `models` fallback list). May be empty: []
+fallback_models = ["anthropic/claude-sonnet-5.5"]
+# How PDFs are parsed (OpenRouter file-parser plugin): native | mistral-ocr | pdf-text
+pdf_engine = "native"
+# HTTP timeout for the request, in seconds.
+timeout_seconds = 120
+# Maximum tokens in the model's reply.
+max_tokens = 16000
+# 0 = most deterministic output (best for extraction).
+temperature = 0
+# Sent as the X-Title header (optional attribution on openrouter.ai).
+app_title = "InsureRemind"
+# Sent as the HTTP-Referer header if non-empty.
+app_url = ""
