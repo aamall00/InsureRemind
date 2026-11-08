@@ -6,7 +6,7 @@
 # OpenRouter OpenAI-compatible endpoint.
 base_url = "https://openrouter.ai/api/v1"
 # Primary model slug. Check the exact slug at https://openrouter.ai/models
-model = "anthropic/claude-opus-5"
+model = "anthropic/claude-opus-5.5"
 # Tried in order if the primary model fails (OpenRouter `models` fallback list). May be empty: []
 fallback_models = ["anthropic/claude-sonnet-5.5"]
 # How PDFs are parsed (OpenRouter file-parser plugin): native | mistral-ocr | pdf-text
