@@ -83,6 +83,16 @@ Policy documents are read through [OpenRouter](https://openrouter.ai) (OpenAI-co
 The extracted fields include insured/vehicle details, current premium breakdown (net, GST, total), NCB and the previous
 policy; the agent reviews and edits everything before saving. Contact details are never read from the document.
 
+## Reports
+
+**Reports** in the navbar (`/reports/`, any user with view access, including Read only) searches policies by owner name
+(contains), vehicle number (normalised, partial match such as `mh12`) and expiry month, optionally showing only the latest
+policy per vehicle (default). The result table shows totals for net premium, GST and total premium across all matching rows.
+**Export Excel** (`openpyxl`) and **Export PDF** (`reportlab`, landscape A4; amount columns are labelled "(Rs.)") download every
+matching row using the same filters.
+
+Policy documents can be downloaded from the vehicle page (one by one, or "Download all policies (ZIP)").
+
 ## Reminders
 
 Creating a policy schedules one `Reminder` row for each of `REMINDER_DAYS` x {email, WhatsApp} x {owner, agent}.

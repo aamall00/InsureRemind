@@ -17,6 +17,7 @@
       <ul class="navbar-nav me-auto">
         <li class="nav-item"><a class="nav-link" href="{% url 'dashboard' %}">Dashboard</a></li>
         <li class="nav-item"><a class="nav-link" href="{% url 'vehicle_list' %}">Policies</a></li>
+        <li class="nav-item"><a class="nav-link" href="{% url 'report' %}">Reports</a></li>
         {% if perms.policies.add_policy %}<li class="nav-item"><a class="nav-link" href="{% url 'upload' %}">Upload policy</a></li>{% endif %}
         {% if perms.notifications.view_reminder %}<li class="nav-item"><a class="nav-link" href="{% url 'reminder_list' %}">Reminders</a></li>{% endif %}
         {% if user.is_superuser %}

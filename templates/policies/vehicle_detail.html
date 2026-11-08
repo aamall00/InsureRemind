@@ -1,4 +1,5 @@
 {% extends "base.html" %}
+{% load policy_tags %}
 {% block title %}{{ vehicle.registration_no }} - InsureRemind{% endblock %}
 {% block content %}
 <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
@@ -28,23 +29,27 @@
     </dl></div></div></div>
 </div>
 
-<h2 class="h5">Policy history</h2>
+<div class="d-flex justify-content-between align-items-center mb-2">
+  <h2 class="h5 mb-0">Policy history</h2>
+  {% if docs_count >= 2 %}<a class="btn btn-sm btn-outline-primary" href="{% url 'vehicle_documents_zip' vehicle.pk %}">Download all policies (ZIP)</a>{% endif %}
+</div>
 {% for policy in policies %}
 <div class="card mb-3">
   <div class="card-header d-flex justify-content-between flex-wrap gap-2">
-    <span><strong>{{ policy.insurer }}</strong> &middot; {{ policy.policy_number }} &middot; {{ policy.get_policy_type_display }}
+    <span><span class="badge text-bg-dark">{% if forloop.first %}Current policy{% else %}Previous policy{% endif %}</span> <strong>{{ policy.insurer }}</strong> &middot; {{ policy.policy_number }} &middot; {{ policy.get_policy_type_display }}
       {% include "partials/status_badge.html" %}{% if forloop.first %} <span class="badge text-bg-primary">Latest</span>{% endif %}</span>
     <span class="text-nowrap">
-      {% if policy.document %}<a class="btn btn-sm btn-outline-secondary" href="{% url 'policy_document' policy.pk %}" target="_blank">View document</a>{% endif %}
+      {% if policy.doc_available %}<a class="btn btn-sm btn-outline-secondary" href="{% url 'policy_document' policy.pk %}" target="_blank">View document</a>
+      <a class="btn btn-sm btn-outline-secondary" href="{% url 'policy_document' policy.pk %}?download=1" title="{{ policy.doc_filename }}">Download</a>{% else %}<span class="text-muted small me-2">No document</span>{% endif %}
       {% if perms.policies.change_policy %}<a class="btn btn-sm btn-outline-primary" href="{% url 'policy_edit' policy.pk %}">Edit</a>{% endif %}
     </span>
   </div>
   <div class="card-body"><div class="row">
     <div class="col-md-6"><dl class="row mb-0">
       <dt class="col-5">Period</dt><dd class="col-7">{{ policy.start_date|date:"d-M-Y" }} to {{ policy.expiry_date|date:"d-M-Y" }}</dd>
-      <dt class="col-5">Net premium</dt><dd class="col-7">{% if policy.net_premium is not None %}&#8377; {{ policy.net_premium }}{% else %}-{% endif %}</dd>
-      <dt class="col-5">GST</dt><dd class="col-7">{% if policy.gst_amount is not None %}&#8377; {{ policy.gst_amount }}{% else %}-{% endif %}</dd>
-      <dt class="col-5">Total premium (incl. GST)</dt><dd class="col-7">&#8377; {{ policy.premium }}</dd>
+      <dt class="col-5">Net premium</dt><dd class="col-7">{{ policy.net_premium|inr }}</dd>
+      <dt class="col-5">GST</dt><dd class="col-7">{{ policy.gst_amount|inr }}</dd>
+      <dt class="col-5">Total premium (incl. GST)</dt><dd class="col-7">{{ policy.premium|inr }}</dd>
       <dt class="col-5">NCB</dt><dd class="col-7">{% if policy.ncb_percent is not None %}{{ policy.ncb_percent|floatformat:"-2" }}%{% else %}-{% endif %}</dd>
     </dl></div>
     <div class="col-md-6"><div class="small text-muted mb-1">Previous policy</div><dl class="row mb-0">

@@ -715,7 +715,7 @@ class NewFieldsFlowTests(Base):
         self.assertEqual(p.previous_ncb_percent, Decimal("0"))
         self.assertEqual(p.previous_claims_count, 0)
         html = self.client.get(reverse("vehicle_detail", args=[v.pk])).content.decode()
-        for needle in ("STAFF TRANSPORT", "16077.00", "2894.00", "18971.00", "SGIC", "213044/00/00/000001"):
+        for needle in ("STAFF TRANSPORT", "₹16,077.00", "₹2,894.00", "₹18,971.00", "SGIC", "213044/00/00/000001"):
             self.assertIn(needle, html)
 
     def test_review_warning_previous_end_after_start(self):

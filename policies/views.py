@@ -1,11 +1,13 @@
+import io
 import mimetypes
+import zipfile
 from datetime import timedelta
 
 from django.contrib import messages
 from django.contrib.auth.mixins import PermissionRequiredMixin
 from django.core.paginator import Paginator
 from django.db.models import Q
-from django.http import FileResponse, Http404
+from django.http import FileResponse, Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect, render
 from django.utils import timezone
 from django.views import View
@@ -14,6 +16,7 @@ from notifications.models import Reminder
 from notifications.scheduling import reschedule
 
 from . import extraction
+from .documents import document_available, document_filename
 from .forms import OwnerForm, PolicyForm, ReviewForm, UploadForm, VehicleForm, policy_warnings
 from .models import Owner, Policy, PolicyUpload, Vehicle
 from .services import confirm_upload
@@ -74,12 +77,15 @@ class VehicleDetailView(Perm, View):
 
     def get(self, request, pk):
         vehicle = get_object_or_404(Vehicle.objects.select_related("owner"), pk=pk)
-        policies = list(vehicle.policies.order_by("-expiry_date", "-id"))
+        policies = list(vehicle.policies.select_related("vehicle").order_by("-expiry_date", "-id"))
+        for p in policies:
+            p.doc_available = document_available(p)
+            p.doc_filename = document_filename(p) if p.doc_available else ""
         latest = policies[0] if policies else None
         reminders = latest.reminders.order_by("scheduled_for", "channel", "recipient_type") if latest else []
         return render(request, "policies/vehicle_detail.html", {
             "vehicle": vehicle, "owner": vehicle.owner, "policies": policies, "latest": latest,
-            "reminders": reminders,
+            "reminders": reminders, "docs_count": sum(p.doc_available for p in policies),
         })
 
 
@@ -186,16 +192,16 @@ class UploadDiscardView(Perm, View):
         return redirect("dashboard")
 
 
-def _file_response(fieldfile):
+def _file_response(fieldfile, as_attachment=False, filename=None):
     if not fieldfile or not fieldfile.name:
         raise Http404("No document")
     try:
         fh = fieldfile.open("rb")
-    except FileNotFoundError:
+    except (FileNotFoundError, ValueError):
         raise Http404("Document file is missing")
     ctype = mimetypes.guess_type(fieldfile.name)[0] or "application/octet-stream"
-    resp = FileResponse(fh, content_type=ctype)
-    resp["Content-Disposition"] = f'inline; filename="{fieldfile.name.rsplit("/", 1)[-1]}"'
+    name = filename or fieldfile.name.rsplit("/", 1)[-1]
+    resp = FileResponse(fh, content_type=ctype, as_attachment=as_attachment, filename=name)
     resp["X-Content-Type-Options"] = "nosniff"
     return resp
 
@@ -211,7 +217,33 @@ class PolicyDocumentView(Perm, View):
     permission_required = "policies.view_policy"
 
     def get(self, request, pk):
-        return _file_response(get_object_or_404(Policy, pk=pk).document)
+        policy = get_object_or_404(Policy.objects.select_related("vehicle"), pk=pk)
+        if request.GET.get("download"):
+            return _file_response(policy.document, as_attachment=True, filename=document_filename(policy))
+        return _file_response(policy.document)
+
+
+class VehicleDocumentsZipView(Perm, View):
+    permission_required = "policies.view_policy"
+
+    def get(self, request, pk):
+        vehicle = get_object_or_404(Vehicle, pk=pk)
+        buf = io.BytesIO()
+        used = set()
+        with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+            for p in vehicle.policies.select_related("vehicle").order_by("-expiry_date", "-id"):
+                if not document_available(p):
+                    continue
+                name = document_filename(p)
+                if name in used:  # same number+start twice: keep both
+                    root, ext = name.rsplit(".", 1)
+                    name = f"{root}_{p.pk}.{ext}"
+                used.add(name)
+                with p.document.open("rb") as fh:
+                    zf.writestr(name, fh.read())
+        resp = HttpResponse(buf.getvalue(), content_type="application/zip")
+        resp["Content-Disposition"] = f'attachment; filename="{vehicle.registration_no}_policies.zip"'
+        return resp
 
 
 class _EditView(Perm, View):
