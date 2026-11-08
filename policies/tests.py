@@ -602,6 +602,9 @@ class ExtractionTests(TestCase):
         self.assertEqual(list(extraction.SCHEMA["required"]), list(extraction.SCHEMA["properties"].keys()))
         self.assertFalse(extraction.SCHEMA["additionalProperties"])
         props = extraction.SCHEMA["properties"]
+        # Anthropic structured outputs reject schemas with more than 16 union-typed params.
+        unions = [k for k, v in props.items() if isinstance(v.get("type"), list) or "anyOf" in v]
+        self.assertLessEqual(len(unions), 16, unions)
         for k in ("net_premium", "gst_amount", "ncb_percent", "previous_ncb_percent"):
             self.assertEqual(props[k]["type"], ["number", "null"])
         self.assertEqual(props["previous_claims_count"]["type"], ["integer", "null"])

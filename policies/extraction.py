@@ -23,7 +23,8 @@ class ExtractionUnavailable(ExtractionError):
 
 
 def _s():
-    return {"type": ["string", "null"]}
+    # Plain string ("" = not present): Anthropic structured outputs allow at most 16 union-typed params.
+    return {"type": "string"}
 
 
 STRING_FIELDS = [
@@ -52,7 +53,7 @@ SCHEMA["required"] = list(SCHEMA["properties"].keys())
 PROMPT = """This is an Indian motor insurance policy document (cover letter / policy schedule). It may contain several sections, including "Insured & Vehicle Details", "Previous Policy Details", a premium table and terms.
 Extract the fields defined in the JSON schema.
 Rules:
-- Use null for any field that is not present in the document. Never guess or infer a value.
+- If a field is not present in the document, use an empty string "" for text/date fields and null for numeric fields. Never guess or infer a value.
 - start_date and expiry_date are the CURRENT policy's Period of Insurance ONLY. Any dates, policy number, insurer, type, NCB or claims found under a "Previous Policy" section must go ONLY into the previous_* fields and must NEVER be placed in the current policy fields. previous_policy_start / previous_policy_end are the previous policy's period.
 - Dates may appear in mixed formats (e.g. "Oct 17, 2026", "17-10-2025", "17/10/2025"). Indian numeric dates are DD-MM-YYYY. Always output dates as YYYY-MM-DD.
 - Premiums are plain numbers without commas or currency symbols. premium_total is the "Total Premium Payable" (including GST). net_premium is the premium before taxes (e.g. "Total Package Premium(A+B)", "Net Premium", "Total Premium (before tax)"). gst_amount is the total tax payable (CGST+SGST+IGST combined).
