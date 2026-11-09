@@ -6,10 +6,19 @@ agent by WhatsApp and email.
 
 ## Stack
 - Django 5.2 (server-rendered templates + Bootstrap 5 via CDN, no SPA), Python 3.12.
-- SQLite in dev; Postgres in prod via `DATABASE_URL` (`dj-database-url`, `psycopg`).
+- Database: Supabase Postgres (project `insureremind`, ref `xdgtgdhtkhowmpzoocll`, Mumbai `ap-south-1`) via
+  `DATABASE_URL` (`dj-database-url`, `psycopg`); SQLite `db.sqlite3` when `DATABASE_URL` is empty.
+  App connects as role `insureremind_app` into schema `insureremind` (role search_path), through the IPv4
+  session pooler `aws-0-ap-south-1.pooler.supabase.com:5432`, user `insureremind_app.<ref>`.
+  Tests use SQLite unless `TEST_DATABASE_URL` is set (must be the direct host `db.<ref>.supabase.co`,
+  not the pooler — pooled idle sessions block dropping `test_postgres`).
 - Config: `.env` (python-dotenv, gitignored) + `config/llm.toml` (committed, non-secret).
 - LLM: OpenRouter chat-completions API called with `requests` (no Anthropic/OpenAI SDK).
   Current model `anthropic/claude-opus-5.5`, fallback `anthropic/claude-sonnet-5.5`.
+- Hosting target: Azure App Service (gunicorn + WhiteNoise static files); plan and checklist in `DEPLOY_AZURE.md`.
+  Documents: `STORAGE_BACKEND` `local` (`media/`) or `azure` (private Blob container via `django-storages`, managed
+  identity, no SAS URLs). Telemetry: Application Insights via OpenTelemetry, only when
+  `APPLICATIONINSIGHTS_CONNECTION_STRING` is set (started in `wsgi.py`).
 - Reports export: `openpyxl` (Excel) and `reportlab` (PDF, built-in Helvetica; amount columns labelled "(Rs.)").
 - Email: Django `send_mail` (SMTP). WhatsApp: Meta WhatsApp Cloud API (template messages) or console backend.
 
@@ -31,7 +40,8 @@ python manage.py send_reminders [--dry-run] [--date YYYY-MM-DD]   # daily job (T
 | `insureremind/settings.py` | All settings; reads `.env`; `settings.LLM` from `llmconfig.py` |
 | `insureremind/llmconfig.py` | Loads `config/llm.toml`; env overrides `OPENROUTER_MODEL`, `LLM_CONFIG_PATH` |
 | `accounts/` | Login, `Profile` (phone), access levels (`access.py`), Manage Users pages, groups data migration `0002_access_groups` |
-| `policies/models.py` | `Owner`, `Vehicle`, `Policy`, `PolicyUpload` |
+| `policies/models.py` | `Owner`, `Vehicle`, `Policy`, `PolicyUpload`, `DocumentAccess`; uuid blob names via `policy_document_path` / `upload_file_path` |
+| `policies/audit.py` | `record_access(request, action, ...)` — writes `DocumentAccess`, never raises |
 | `policies/utils.py` | `normalize_reg_no`, `normalize_phone` — the ONLY normalisers; use them everywhere |
 | `policies/extraction.py` | OpenRouter request, JSON schema, prompt, `clean_extracted` (defensive parsing + warnings) |
 | `policies/services.py` | `confirm_upload` — transactional save of owner/vehicle/policy + reminder scheduling |
@@ -41,7 +51,11 @@ python manage.py send_reminders [--dry-run] [--date YYYY-MM-DD]   # daily job (T
 | `notifications/models.py` | `Reminder` |
 | `notifications/scheduling.py` | `schedule_reminders`, `on_policy_created`, `reschedule`, superseding old policies |
 | `notifications/backends.py` | `send_email`, `send_whatsapp` (`console` / `meta`), `send(reminder)` dispatcher |
+| `notifications/sending.py` | `send_due_reminders()` — shared by the command and the cron endpoint |
 | `notifications/management/commands/send_reminders.py` | Idempotent daily sender with retries |
+| `insureremind/ops_views.py` | `GET /healthz`; `POST /internal/cron/send-reminders/` (`X-Cron-Token` vs `CRON_TOKEN`; 404 if unset, 403 if wrong, `?dry_run=1`, JSON counts) |
+| `insureremind/telemetry.py` | `setup_telemetry()` (called from `wsgi.py`); excludes `healthz` and `/reports/` from traces (query strings hold reg nos) |
+| `deploy/azure/`, `.github/workflows/azure-deploy.yml` | `startup.sh`, Logic App recurrence JSON; CI tests + deploy (deploy job runs only if repo variable `AZURE_WEBAPP_NAME` is set) |
 | `templates/` | Bootstrap templates per app; `partials/` for form fields, pagination, status badge |
 
 ## Domain model
@@ -59,6 +73,8 @@ python manage.py send_reminders [--dry-run] [--date YYYY-MM-DD]   # daily job (T
 - **Reminder**: policy, channel (email/whatsapp), recipient_type (owner/agent), recipient, days_before,
   scheduled_for, status (pending/sent/failed/skipped), attempts, last_attempt_at, error, provider_message_id.
   UniqueConstraint (policy, channel, recipient_type, days_before) is the duplicate-send guard.
+- **DocumentAccess**: audit row per document view/download/zip/upload_view — user (PROTECT), action, policy/vehicle/upload
+  (SET_NULL), denormalised registration_no/policy_number, ip_address, at. Read-only in admin, superuser only.
 
 ## Key flows
 1. **Upload** (Read & Write users): vehicle no + client email + phone + WhatsApp consent + file
@@ -115,6 +131,10 @@ through the login-protected `policy_document` / `upload_file` views.
 - Never put real customer data (names, reg/chassis/policy numbers) in tests, fixtures or commits — use dummy values.
 - Every model change ships with a migration; keep `makemigrations --check` clean.
 - Normalise reg no / phone only via `policies/utils.py`.
+- Every view that serves a document calls `record_access` (only on success; 403/404 record nothing).
+- Uploads are validated by extension, size and leading bytes (`policies/forms.py`); don't trust browser content-type.
+- Blob names are uuids (`policies/<hex>.ext`); old files keep their names. User-facing names come from `document_filename`, never the stored path.
+- Tests must not call Azure; mock the credential. Cron/health endpoints are `login_not_required`.
 - Extraction failures must degrade to manual entry, never a 500.
 - Dates shown as `dd-Mon-yyyy`; amounts in ₹.
 
@@ -123,4 +143,9 @@ through the login-protected `policy_document` / `upload_file` views.
 - OD/TP split premiums and separate OD/TP expiry dates (bundled new-car policies) not yet modelled.
 - Agent details printed on the policy (agency code/name/phone) not captured; agent reminders use the global
   `AGENT_NOTIFY_*` settings.
-- Live Meta WhatsApp sending untested; Postgres untested.
+- Live Meta WhatsApp sending untested. Full suite verified on Supabase Postgres via `TEST_DATABASE_URL`.
+- Azure storage, cron endpoint, audit log and telemetry are implemented (branch `azure-phase1`) but not yet deployed;
+  Postgres test run and local-backend smoke check of Phase 1 still pending (see `DEPLOY_AZURE.md`).
+- `DocumentAccess.ip_address` comes from the first `X-Forwarded-For` value: informational only, client-spoofable.
+- In tests, never call `.close()` on a streaming/File response — it fires `request_finished` and closes the
+  DB connection (invisible on SQLite in-memory, fatal on Postgres). Consume `streaming_content` instead.

@@ -58,6 +58,7 @@ INSTALLED_APPS = [
 
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "whitenoise.middleware.WhiteNoiseMiddleware",  # static files in production
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
@@ -86,9 +87,17 @@ TEMPLATES = [
 
 WSGI_APPLICATION = "insureremind.wsgi.application"
 
+# Tests never touch the real database: they use SQLite unless TEST_DATABASE_URL points at a
+# Postgres server (use a direct connection there; Supabase's pooler keeps idle sessions that
+# block dropping the test database).
+if TESTING:
+    _db_url = env("TEST_DATABASE_URL") or f"sqlite:///{BASE_DIR / 'db.sqlite3'}"
+else:
+    _db_url = env("DATABASE_URL") or f"sqlite:///{BASE_DIR / 'db.sqlite3'}"
 DATABASES = {
     "default": dj_database_url.parse(
-        env("DATABASE_URL") or f"sqlite:///{BASE_DIR / 'db.sqlite3'}", conn_max_age=60
+        _db_url, conn_max_age=60,
+        conn_health_checks=True,  # pooled Postgres (e.g. Supabase) can drop idle connections
     )
 }
 
@@ -113,6 +122,45 @@ MEDIA_ROOT = BASE_DIR / "media"
 FILE_UPLOAD_MAX_MEMORY_SIZE = 10 * 1024 * 1024
 MAX_UPLOAD_BYTES = 10 * 1024 * 1024
 
+
+
+def build_storages(environ, testing=False):
+    """Django STORAGES dict. `environ` is a mapping (os.environ) so this is testable without reloading settings."""
+    backend = (environ.get("STORAGE_BACKEND") or "local").strip().lower()
+    if backend == "local":
+        default = {"BACKEND": "django.core.files.storage.FileSystemStorage"}
+    elif backend == "azure":
+        conn = environ.get("AZURE_STORAGE_CONNECTION_STRING", "")
+        account = environ.get("AZURE_STORAGE_ACCOUNT_NAME", "")
+        if not account and not conn:
+            raise ImproperlyConfigured(
+                "STORAGE_BACKEND=azure needs AZURE_STORAGE_ACCOUNT_NAME (or AZURE_STORAGE_CONNECTION_STRING).")
+        options = {
+            "azure_container": environ.get("AZURE_STORAGE_CONTAINER") or "documents",
+            "overwrite_files": False,
+            "expiration_secs": None,  # never generate SAS URLs: files are streamed through protected views
+        }
+        if account:
+            options["account_name"] = account
+        if conn:
+            options["connection_string"] = conn  # local testing only
+        else:
+            from azure.identity import DefaultAzureCredential  # lazy: only needed on Azure
+            options["token_credential"] = DefaultAzureCredential()
+        default = {"BACKEND": "storages.backends.azure_storage.AzureStorage", "OPTIONS": options}
+    else:
+        raise ImproperlyConfigured(f"Unknown STORAGE_BACKEND {backend!r} (use 'local' or 'azure').")
+    static = ("django.contrib.staticfiles.storage.StaticFilesStorage" if testing
+              else "whitenoise.storage.CompressedManifestStaticFilesStorage")
+    return {"default": default, "staticfiles": {"BACKEND": static}}
+
+
+STORAGE_BACKEND = env("STORAGE_BACKEND", "local")
+STORAGES = build_storages(os.environ, TESTING)
+
+# Token for POST /internal/cron/send-reminders/ (empty disables the endpoint)
+CRON_TOKEN = env("CRON_TOKEN")
+
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
 LOGIN_URL = "login"
@@ -128,6 +176,8 @@ if not DEBUG and not TESTING:
     SECURE_HSTS_INCLUDE_SUBDOMAINS = True
     SECURE_HSTS_PRELOAD = True
     SECURE_PROXY_SSL_HEADER = ("HTTP_X_FORWARDED_PROTO", "https")
+    # App Service's health probe may call the instance over plain HTTP; a 301 would count as unhealthy.
+    SECURE_REDIRECT_EXEMPT = [r"^healthz$"]
 SECURE_CONTENT_TYPE_NOSNIFF = True
 X_FRAME_OPTIONS = "SAMEORIGIN"  # PDFs are embedded in an iframe on our own pages
 

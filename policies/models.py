@@ -1,4 +1,6 @@
+import os
 from datetime import timedelta
+from uuid import uuid4
 
 from django.conf import settings
 from django.db import models
@@ -13,6 +15,19 @@ EXPIRING_SOON_DAYS = 30
 
 def today():
     return timezone.localdate()
+
+
+def _random_path(folder, filename):
+    ext = os.path.splitext(filename or "")[1].lower()
+    return f"{folder}/{uuid4().hex}{ext}"
+
+
+def policy_document_path(instance, filename):
+    return _random_path("policies", filename)
+
+
+def upload_file_path(instance, filename):
+    return _random_path("uploads", filename)
 
 
 class Owner(models.Model):
@@ -104,7 +119,7 @@ class Policy(models.Model):
     previous_claims_count = models.PositiveSmallIntegerField("Claims under previous policy", null=True, blank=True)
     start_date = models.DateField()
     expiry_date = models.DateField()
-    document = models.FileField(upload_to="policies/", blank=True)
+    document = models.FileField(upload_to=policy_document_path, blank=True)
     extracted_data = models.JSONField(null=True, blank=True)
     created_by = models.ForeignKey(
         settings.AUTH_USER_MODEL, null=True, blank=True, on_delete=models.SET_NULL, related_name="+"
@@ -159,7 +174,7 @@ class PolicyUpload(models.Model):
     PENDING, CONFIRMED, DISCARDED = "pending", "confirmed", "discarded"
     STATUS_CHOICES = [(PENDING, "Pending"), (CONFIRMED, "Confirmed"), (DISCARDED, "Discarded")]
 
-    file = models.FileField(upload_to="uploads/")
+    file = models.FileField(upload_to=upload_file_path)
     vehicle_no = models.CharField(max_length=20)
     email = models.EmailField(blank=True)
     phone = models.CharField(max_length=20)
@@ -178,3 +193,25 @@ class PolicyUpload(models.Model):
     @property
     def is_pdf(self):
         return self.file.name.lower().endswith(".pdf")
+
+
+class DocumentAccess(models.Model):
+    """Audit log: one row per successful document view/download."""
+    VIEW, DOWNLOAD, ZIP, UPLOAD_VIEW = "view", "download", "zip", "upload_view"
+    ACTION_CHOICES = [(VIEW, "View"), (DOWNLOAD, "Download"), (ZIP, "ZIP download"), (UPLOAD_VIEW, "Upload view")]
+
+    user = models.ForeignKey(settings.AUTH_USER_MODEL, null=True, on_delete=models.PROTECT, related_name="+")
+    action = models.CharField(max_length=12, choices=ACTION_CHOICES)
+    policy = models.ForeignKey(Policy, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    vehicle = models.ForeignKey(Vehicle, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    upload = models.ForeignKey(PolicyUpload, null=True, blank=True, on_delete=models.SET_NULL, related_name="+")
+    registration_no = models.CharField(max_length=20, blank=True)
+    policy_number = models.CharField(max_length=100, blank=True)
+    ip_address = models.GenericIPAddressField(null=True, blank=True)
+    at = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ["-at"]
+
+    def __str__(self):
+        return f"{self.action} {self.registration_no} by {self.user_id} at {self.at}"

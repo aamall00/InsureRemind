@@ -1,5 +1,6 @@
 import io
 import mimetypes
+import os
 import zipfile
 from datetime import timedelta
 
@@ -16,6 +17,7 @@ from notifications.models import Reminder
 from notifications.scheduling import reschedule
 
 from . import extraction
+from .audit import record_access
 from .documents import document_available, document_filename
 from .forms import OwnerForm, PolicyForm, ReviewForm, UploadForm, VehicleForm, policy_warnings
 from .models import Owner, Policy, PolicyUpload, Vehicle
@@ -210,7 +212,10 @@ class UploadFileView(Perm, View):
     permission_required = "policies.add_policy"
 
     def get(self, request, pk):
-        return _file_response(get_object_or_404(PolicyUpload, pk=pk).file)
+        upload = get_object_or_404(PolicyUpload, pk=pk)
+        resp = _file_response(upload.file, filename=f"{upload.vehicle_no}{os.path.splitext(upload.file.name)[1]}")
+        record_access(request, "upload_view", upload=upload)
+        return resp
 
 
 class PolicyDocumentView(Perm, View):
@@ -218,9 +223,13 @@ class PolicyDocumentView(Perm, View):
 
     def get(self, request, pk):
         policy = get_object_or_404(Policy.objects.select_related("vehicle"), pk=pk)
-        if request.GET.get("download"):
-            return _file_response(policy.document, as_attachment=True, filename=document_filename(policy))
-        return _file_response(policy.document)
+        download = bool(request.GET.get("download"))
+        if download:
+            resp = _file_response(policy.document, as_attachment=True, filename=document_filename(policy))
+        else:
+            resp = _file_response(policy.document)
+        record_access(request, "download" if download else "view", policy=policy)
+        return resp
 
 
 class VehicleDocumentsZipView(Perm, View):
@@ -243,6 +252,7 @@ class VehicleDocumentsZipView(Perm, View):
                     zf.writestr(name, fh.read())
         resp = HttpResponse(buf.getvalue(), content_type="application/zip")
         resp["Content-Disposition"] = f'attachment; filename="{vehicle.registration_no}_policies.zip"'
+        record_access(request, "zip", vehicle=vehicle)
         return resp
 
 

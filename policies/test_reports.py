@@ -186,18 +186,18 @@ class DownloadTests(ReportBase):
         r = self.client.get(self.url + "?download=1")
         self.assertEqual(r.status_code, 200)
         self.assertEqual(r["Content-Disposition"], 'attachment; filename="GJ01AB1234_3004-200-00-000_2029-10-17.pdf"')
-        r.close()
+        b"".join(r.streaming_content)  # consume via the test client: closes the file without closing the DB connection
         r = self.client.get(self.url)
         self.assertTrue(r["Content-Disposition"].startswith("inline"))
         self.assertEqual(r["Content-Type"], "application/pdf")
-        r.close()
+        b"".join(r.streaming_content)  # consume via the test client: closes the file without closing the DB connection
 
     def test_original_extension_kept(self):
         attach(self.new, b"\xff\xd8jpg", name="scan.JPG")
         self.client.force_login(self.ro)
         r = self.client.get(self.url + "?download=1")
         self.assertIn("_2029-10-17.jpg", r["Content-Disposition"])
-        r.close()
+        b"".join(r.streaming_content)  # consume via the test client: closes the file without closing the DB connection
 
     def test_auth_required(self):
         for u in (self.url, self.url + "?download=1", reverse("vehicle_documents_zip", args=[self.old.vehicle.pk])):
@@ -216,8 +216,7 @@ class DownloadTests(ReportBase):
         self.assertEqual(zf.read("GJ01AB1234_3004-200-00-000_2029-10-17.pdf"), b"%PDF-new")
 
     def test_missing_file_404_and_zip_skips(self):
-        import os
-        os.remove(self.old.document.path)
+        self.old.document.storage.delete(self.old.document.name)
         self.client.force_login(self.ro)
         self.assertEqual(self.client.get(reverse("policy_document", args=[self.old.pk]) + "?download=1").status_code, 404)
         r = self.client.get(reverse("vehicle_documents_zip", args=[self.old.vehicle.pk]))
@@ -244,6 +243,20 @@ class DownloadTests(ReportBase):
         self.assertContains(page, "No document")
         self.assertNotContains(page, "Download all policies")
         self.assertEqual(self.client.get(reverse("policy_document", args=[nodoc.pk]) + "?download=1").status_code, 404)
+
+
+@override_settings(STORAGES={
+    "default": {"BACKEND": "django.core.files.storage.InMemoryStorage"},
+    "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
+})
+class InMemoryDownloadTests(DownloadTests):
+    """Re-runs the document view / download / ZIP / missing-file checks on InMemoryStorage, proving nothing
+    depends on the local filesystem. FileField holds the lazy `default_storage` proxy, which Django resets when
+    STORAGES changes, so override_settings alone is enough (no need to patch the field's storage)."""
+
+    def test_uses_in_memory_storage(self):
+        from django.core.files.storage import InMemoryStorage
+        self.assertIsInstance(self.new.document.storage, InMemoryStorage)
 
 
 class InrFilterTests(TestCase):

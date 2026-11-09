@@ -52,7 +52,14 @@ Superusers made with `createsuperuser` show as Admin. Every user sees all client
 | `ALLOWED_HOSTS` | `localhost,127.0.0.1` in debug | Comma-separated hosts. |
 | `CSRF_TRUSTED_ORIGINS` | empty | e.g. `https://portal.example.com`. |
 | `SECURE_SSL_REDIRECT` | `true` (when not debug) | Set `false` if TLS is terminated upstream without `X-Forwarded-Proto`. |
-| `DATABASE_URL` | SQLite `db.sqlite3` | e.g. `postgres://user:pass@host:5432/insureremind`. |
+| `DATABASE_URL` | SQLite `db.sqlite3` | Postgres URL, e.g. Supabase session pooler — see "Database: Supabase". |
+| `TEST_DATABASE_URL` | empty (tests use SQLite) | Optional Postgres URL for `manage.py test`; use a direct (non-pooled) host. |
+| `STORAGE_BACKEND` | `local` | `local` (`media/` folder) or `azure` (private Blob container). |
+| `AZURE_STORAGE_ACCOUNT_NAME` | empty | Storage account name (azure backend; managed identity auth). |
+| `AZURE_STORAGE_CONTAINER` | `documents` | Blob container name (azure backend). |
+| `AZURE_STORAGE_CONNECTION_STRING` | empty | Local testing only; overrides managed identity. Never in production. |
+| `CRON_TOKEN` | empty | Secret for `POST /internal/cron/send-reminders/` (`X-Cron-Token` header). Empty disables the endpoint (404). |
+| `APPLICATIONINSIGHTS_CONNECTION_STRING` | empty | Enables Azure Application Insights telemetry (empty = off). |
 | `OPENROUTER_API_KEY` | empty | Secret key for AI extraction (https://openrouter.ai/keys). If empty, the review page shows a banner and manual entry. |
 | `OPENROUTER_MODEL` | from `config/llm.toml` | Optional override of the model slug. |
 | `LLM_CONFIG_PATH` | `config/llm.toml` | Optional path to another LLM settings file. |
@@ -69,6 +76,45 @@ Superusers made with `createsuperuser` show as Admin. Every user sees all client
 | `WHATSAPP_ACCESS_TOKEN` | | Permanent system-user token. |
 | `WHATSAPP_TEMPLATE_NAME` | `policy_expiry_reminder` | Approved template name. |
 | `WHATSAPP_TEMPLATE_LANG` | `en` | Template language code. |
+
+## Database: Supabase (Postgres)
+
+Production data lives in a Supabase project (region `ap-south-1`, Mumbai). The app connects as its own
+login role into a private schema, not as `postgres` and not into `public`.
+
+1. **Create the project** at https://supabase.com/dashboard → New project → region *South Asia (Mumbai)*.
+2. **Create the app role and schema** (Dashboard → SQL Editor). Use a long random password:
+   ```sql
+   create role insureremind_app with login password '<strong-password>';
+   grant insureremind_app to postgres;              -- needed on Postgres 16+ to hand over the schema
+   create schema insureremind authorization insureremind_app;
+   alter role insureremind_app set search_path = insureremind, public;
+   alter role insureremind_app createdb;            -- optional: only to run tests on Postgres
+   ```
+   The `insureremind` schema is not exposed by Supabase's Data API, and `anon` / `authenticated`
+   have no privileges on it, so client data is only reachable through this Django app.
+3. **Connection string** — use the **session pooler** (IPv4, works from any network). Find it under
+   Dashboard → Connect → Session pooler. Note the username is `<role>.<project-ref>`:
+   ```
+   DATABASE_URL=postgres://insureremind_app.<project-ref>:<password>@aws-0-ap-south-1.pooler.supabase.com:5432/postgres?sslmode=require
+   ```
+   Put it in `.env` (local) or the host's secret store (production). Never commit it.
+4. **Create the tables:** `python manage.py migrate`, then `python manage.py createsuperuser`.
+5. **Moving existing SQLite data** (optional):
+   ```
+   $env:DATABASE_URL="sqlite:///<full path>/db.sqlite3"
+   python manage.py dumpdata auth.user accounts policies notifications --natural-foreign -o data.json
+   Remove-Item Env:DATABASE_URL
+   python manage.py loaddata data.json
+   ```
+6. **Tests** use SQLite by default. To run them on Postgres set `TEST_DATABASE_URL` to the **direct** host
+   (`db.<project-ref>.supabase.co`, user `insureremind_app`) — the pooler keeps idle sessions that stop Django
+   dropping the test database. The direct host is IPv6-only on Supabase's free plan.
+
+Notes:
+- Uploaded policy documents are not stored in Supabase: they go to `media/` (`STORAGE_BACKEND=local`) or Azure Blob Storage (`STORAGE_BACKEND=azure`).
+- Supabase free projects pause after a period of inactivity; resume them from the dashboard.
+- Back-ups: daily on paid plans; on the free plan export with `pg_dump` via the session pooler.
 
 ## AI extraction (OpenRouter)
 
@@ -123,6 +169,11 @@ schtasks /Create /SC DAILY /ST 09:00 /TN "InsureRemind reminders" /TR "cmd /c cd
 0 9 * * * cd /srv/insureremind && .venv/bin/python manage.py send_reminders >> /var/log/insureremind-reminders.log 2>&1
 ```
 
+**Hosted alternative:** set `CRON_TOKEN` and have a scheduler (for example an Azure Logic App) call
+`POST /internal/cron/send-reminders/` with header `X-Cron-Token: <token>` daily. It runs the same code as the command and
+returns JSON counts; add `?dry_run=1` to test. It returns 404 when `CRON_TOKEN` is empty and 403 for a wrong token.
+`GET /healthz` (no login) returns `ok` after a database check, for health probes.
+
 ## WhatsApp setup (Meta Cloud API)
 
 1. Create a Meta Business account (business.facebook.com) and verify the business.
@@ -150,7 +201,14 @@ The same template is used for owner and agent messages. Clients must have given 
   (`psycopg` is in `requirements.txt`).
 - Run behind a TLS-terminating proxy that sets `X-Forwarded-Proto`; use gunicorn (Linux) or waitress (Windows).
 - Static files: only Django admin uses them; run `collectstatic` and serve `STATIC_ROOT` (e.g. via the proxy or WhiteNoise).
-- Back up the database and `MEDIA_ROOT` (uploaded policy documents). Keep `MEDIA_ROOT` outside any web-served path.
+- Back up the database and the documents (`MEDIA_ROOT` for the local backend; Blob soft delete/versioning for Azure). Keep `MEDIA_ROOT` outside any web-served path.
 - Schedule `send_reminders` daily (above). `python manage.py check --deploy` is clean apart from `security.W019`
   (`X_FRAME_OPTIONS=SAMEORIGIN` is intentional so policy PDFs can be embedded in the review page).
 - Uploaded documents are sent to OpenRouter (and the underlying model provider) for extraction; mention this in your privacy notice.
+
+## Deploying to Azure
+
+The app runs on Azure App Service (gunicorn + WhiteNoise) with PostgreSQL Flexible Server, private Blob Storage
+(`STORAGE_BACKEND=azure`, managed identity) and Application Insights. Startup script, Logic App definition and GitHub
+Actions workflow are in `deploy/azure/` and `.github/workflows/`. Document views, downloads and ZIPs are recorded in
+`DocumentAccess` (read-only in `/admin/`). See [DEPLOY_AZURE.md](DEPLOY_AZURE.md) for the full plan and checklist.

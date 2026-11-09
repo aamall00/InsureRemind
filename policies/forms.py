@@ -16,6 +16,18 @@ ALLOWED_TYPES = {
 }
 
 
+def _content_matches(ext, head):
+    if ext == ".pdf":
+        return head.startswith(b"%PDF-")
+    if ext in (".jpg", ".jpeg"):
+        return head.startswith(b"\xff\xd8\xff")
+    if ext == ".png":
+        return head.startswith(b"\x89PNG\r\n\x1a\n")
+    if ext == ".webp":
+        return head[0:4] == b"RIFF" and head[8:12] == b"WEBP"
+    return False
+
+
 def validate_policy_file(f):
     ext = os.path.splitext(f.name)[1].lower()
     if ext not in ALLOWED_TYPES:
@@ -25,6 +37,11 @@ def validate_policy_file(f):
         raise ValidationError(f"File content type {ctype} does not match its extension.")
     if f.size > settings.MAX_UPLOAD_BYTES:
         raise ValidationError("File is too large (max 10 MB).")
+    f.seek(0)
+    head = f.read(12)
+    f.seek(0)
+    if not _content_matches(ext, head):
+        raise ValidationError("The file content doesn't match its extension.")
 
 
 class UploadForm(forms.Form):

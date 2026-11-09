@@ -12,7 +12,7 @@ from django.core import mail
 from django.core.exceptions import ValidationError
 from django.core.files.uploadedfile import SimpleUploadedFile
 from django.core.management import call_command
-from django.test import TestCase, override_settings
+from django.test import RequestFactory, TestCase, override_settings
 from django.urls import reverse
 from django.utils import timezone
 
@@ -21,7 +21,9 @@ from notifications import backends
 from notifications.models import Reminder
 from notifications.scheduling import on_policy_created
 from policies import extraction
-from policies.models import Owner, Policy, PolicyUpload, Vehicle
+from policies.documents import document_filename
+from policies.forms import validate_policy_file
+from policies.models import DocumentAccess, Owner, Policy, PolicyUpload, Vehicle
 from policies.utils import normalize_phone, normalize_reg_no
 
 User = get_user_model()
@@ -202,7 +204,7 @@ class UploadFlowTests(Base):
         self.assertNotContains(page, "Registration number mismatch")
         fr = self.client.get(reverse("upload_file", args=[up.pk]))
         self.assertEqual(fr.status_code, 200)
-        fr.close()  # release the file handle (Windows can't delete open files)
+        b"".join(fr.streaming_content)  # consume via the test client: closes the file without closing the DB connection
 
         with self.captureOnCommitCallbacks(execute=True):
             r = self.client.post(reverse("upload_review", args=[up.pk]), review_data())
@@ -754,3 +756,135 @@ class SeedTests(TestCase):
         call_command("seed_demo", stdout=StringIO())  # idempotent
         self.assertEqual(Vehicle.objects.count(), 5)
         call_command("send_reminders", "--dry-run", stdout=StringIO())
+
+
+# --- Upload hardening & audit log -------------------------------------------------------------
+
+PDF_BYTES = b"%PDF-1.4 dummy"
+PNG_BYTES = b"\x89PNG\r\n\x1a\n" + b"\x00" * 8
+JPG_BYTES = b"\xff\xd8\xff\xe0" + b"\x00" * 8
+WEBP_BYTES = b"RIFF\x00\x00\x00\x00WEBPVP8 "
+
+
+class BlobNameTests(Base):
+    def setUp(self):
+        super().setUp()
+        self.client.force_login(self.rw)
+
+    @mock.patch("policies.views.extraction.extract_policy_data", return_value=GOOD_EXTRACTION)
+    def test_random_names_and_friendly_download(self, m):
+        f = SimpleUploadedFile("Client Name MH12AB1234.pdf", PDF_BYTES, content_type="application/pdf")
+        upload_post(self.client, file=f)
+        up = PolicyUpload.objects.get()
+        self.assertRegex(up.file.name, r"^uploads/[0-9a-f]{32}\.pdf$")
+        with self.captureOnCommitCallbacks(execute=True):
+            self.client.post(reverse("upload_review", args=[up.pk]), review_data())
+        p = Policy.objects.get()
+        self.assertRegex(p.document.name, r"^policies/[0-9a-f]{32}\.pdf$")
+        r = self.client.get(reverse("policy_document", args=[p.pk]) + "?download=1")
+        b"".join(r.streaming_content)
+        self.assertIn(document_filename(p), r["Content-Disposition"])
+        self.assertNotIn("Client Name", r["Content-Disposition"])
+
+    def test_extension_lowercased(self):
+        from policies.models import policy_document_path, upload_file_path
+        self.assertRegex(policy_document_path(None, "A B.PNG"), r"^policies/[0-9a-f]{32}\.png$")
+        self.assertRegex(upload_file_path(None, "x.JpG"), r"^uploads/[0-9a-f]{32}\.jpg$")
+
+
+class ContentCheckTests(TestCase):
+    CT = {".pdf": "application/pdf", ".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+          ".webp": "image/webp"}
+
+    def make(self, name, data):
+        return SimpleUploadedFile(name, data, content_type=self.CT[os.path.splitext(name)[1]])
+
+    def check(self, name, data):
+        validate_policy_file(self.make(name, data))
+
+    def test_mismatches_rejected(self):
+        for name, data in [("a.pdf", PNG_BYTES), ("a.png", PDF_BYTES), ("a.jpg", b"random bytes here"),
+                           ("a.webp", b"RIFF\x00\x00\x00\x00WAVEfmt "), ("a.jpeg", PNG_BYTES)]:
+            with self.assertRaisesMessage(ValidationError, "doesn't match its extension"):
+                self.check(name, data)
+
+    def test_valid_samples_accepted_and_rewound(self):
+        for name, data in [("a.pdf", PDF_BYTES), ("a.png", PNG_BYTES), ("a.jpg", JPG_BYTES),
+                           ("a.jpeg", JPG_BYTES), ("a.webp", WEBP_BYTES)]:
+            f = self.make(name, data)
+            validate_policy_file(f)
+            self.assertEqual(f.read(), data)
+
+
+class AuditTests(Base):
+    def setUp(self):
+        super().setUp()
+        self.p = make_policy()
+        self.p.document.save("d.pdf", SimpleUploadedFile("d.pdf", PDF_BYTES))
+        self.up = PolicyUpload.objects.create(
+            file=SimpleUploadedFile("u.pdf", PDF_BYTES), vehicle_no="MH12AB1234", phone="+919876543210",
+            created_by=self.rw)
+
+    def get(self, url, **extra):
+        r = self.client.get(url, **extra)
+        if hasattr(r, "streaming_content"):
+            b"".join(r.streaming_content)
+        return r
+
+    def test_view_download_zip_upload_view(self):
+        self.client.force_login(self.rw)
+        doc = reverse("policy_document", args=[self.p.pk])
+        cases = [
+            (doc, "view"), (doc + "?download=1", "download"),
+            (reverse("vehicle_documents_zip", args=[self.p.vehicle.pk]), "zip"),
+            (reverse("upload_file", args=[self.up.pk]), "upload_view"),
+        ]
+        for url, action in cases:
+            DocumentAccess.objects.all().delete()
+            self.assertEqual(self.get(url).status_code, 200)
+            row = DocumentAccess.objects.get()
+            self.assertEqual((row.user, row.action, row.registration_no), (self.rw, action, "MH12AB1234"))
+        self.assertEqual(row.upload, self.up)
+
+    def test_policy_row_fields(self):
+        self.client.force_login(self.ro)
+        self.get(reverse("policy_document", args=[self.p.pk]))
+        row = DocumentAccess.objects.get()
+        self.assertEqual((row.policy, row.vehicle, row.policy_number), (self.p, self.p.vehicle, "P1"))
+
+    def test_404_and_denied_create_nothing(self):
+        self.client.force_login(self.ro)
+        p2 = make_policy(reg="KA01XY9999", policy_number="P2")  # no document
+        self.assertEqual(self.get(reverse("policy_document", args=[p2.pk])).status_code, 404)
+        self.assertEqual(self.get(reverse("upload_file", args=[self.up.pk])).status_code, 403)  # needs add perm
+        self.assertEqual(DocumentAccess.objects.count(), 0)
+
+    def test_x_forwarded_for_port_stripped(self):
+        from policies.audit import client_ip
+        self.client.force_login(self.ro)
+        self.get(reverse("policy_document", args=[self.p.pk]), HTTP_X_FORWARDED_FOR="1.2.3.4:5678, 10.0.0.1")
+        self.assertEqual(DocumentAccess.objects.get().ip_address, "1.2.3.4")
+        rf = RequestFactory()
+        for hdr, want in [("[::1]:443", "::1"), ("2001:db8::1", "2001:db8::1"), ("garbage", "9.9.9.9")]:
+            req = rf.get("/", HTTP_X_FORWARDED_FOR=hdr, REMOTE_ADDR="9.9.9.9")
+            self.assertEqual(client_ip(req), want)
+        self.assertEqual(client_ip(rf.get("/", REMOTE_ADDR="")), None)
+
+    def test_audit_failure_does_not_break_download(self):
+        self.client.force_login(self.ro)
+        with mock.patch.object(DocumentAccess.objects, "create", side_effect=RuntimeError("db down")):
+            with self.assertLogs("policies.audit", level="ERROR"):
+                r = self.get(reverse("policy_document", args=[self.p.pk]))
+        self.assertEqual(r.status_code, 200)
+
+    def test_admin_read_only(self):
+        self.client.force_login(self.ro)
+        self.get(reverse("policy_document", args=[self.p.pk]))
+        su = User.objects.create_superuser("root", "r@example.com", "pw-Str0ng-123")
+        self.client.force_login(su)
+        self.assertEqual(self.client.get(reverse("admin:policies_documentaccess_changelist")).status_code, 200)
+        self.assertEqual(self.client.get(reverse("admin:policies_documentaccess_add")).status_code, 403)
+        row = DocumentAccess.objects.get()
+        self.assertEqual(self.client.get(reverse("admin:policies_documentaccess_delete", args=[row.pk])).status_code, 403)
+        self.client.force_login(self.rw)
+        self.assertNotEqual(self.client.get(reverse("admin:policies_documentaccess_changelist")).status_code, 200)

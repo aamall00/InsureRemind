@@ -1,0 +1,40 @@
+{
+  "$schema": "https://schema.management.azure.com/providers/Microsoft.Logic/schemas/2016-06-01/workflowdefinition.json#",
+  "contentVersion": "1.0.0.0",
+  "parameters": {
+    "appBaseUrl": { "type": "String", "defaultValue": "https://app.example.com" },
+    "cronToken": { "type": "SecureString" }
+  },
+  "triggers": {
+    "Recurrence": {
+      "type": "Recurrence",
+      "recurrence": {
+        "frequency": "Day",
+        "interval": 1,
+        "timeZone": "India Standard Time",
+        "schedule": { "hours": [9], "minutes": [0] }
+      }
+    }
+  },
+  "actions": {
+    "Send_reminders": {
+      "type": "Http",
+      "inputs": {
+        "method": "POST",
+        "uri": "@{concat(trim(parameters('appBaseUrl')), '/internal/cron/send-reminders/')}",
+        "headers": { "X-Cron-Token": "@parameters('cronToken')" },
+        "retryPolicy": {
+          "type": "exponential",
+          "count": 3,
+          "interval": "PT30S",
+          "minimumInterval": "PT30S",
+          "maximumInterval": "PT10M"
+        }
+      },
+      "runtimeConfiguration": {
+        "secureData": { "properties": ["inputs", "outputs"] }
+      }
+    }
+  },
+  "outputs": {}
+}
