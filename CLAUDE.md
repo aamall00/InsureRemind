@@ -144,8 +144,59 @@ through the login-protected `policy_document` / `upload_file` views.
 - Agent details printed on the policy (agency code/name/phone) not captured; agent reminders use the global
   `AGENT_NOTIFY_*` settings.
 - Live Meta WhatsApp sending untested. Full suite verified on Supabase Postgres via `TEST_DATABASE_URL`.
-- Azure storage, cron endpoint, audit log and telemetry are implemented (branch `azure-phase1`) but not yet deployed;
-  Postgres test run and local-backend smoke check of Phase 1 still pending (see `DEPLOY_AZURE.md`).
+- Azure Phase 1 code is on `main`; Phase 2 infra is built and the app is deployed (see **Azure status** below).
 - `DocumentAccess.ip_address` comes from the first `X-Forwarded-For` value: informational only, client-spoofable.
+- `setup_telemetry()` lets an invalid `APPLICATIONINSIGHTS_CONNECTION_STRING` crash every gunicorn worker
+  (happened on the first deploy). Planned fix: catch, log, start without telemetry, plus a test.
 - In tests, never call `.close()` on a streaming/File response — it fires `request_finished` and closes the
   DB connection (invisible on SQLite in-memory, fatal on Postgres). Consume `streaming_content` instead.
+
+## Azure status (as of 2026-11-10)
+Full checklist: `DEPLOY_AZURE.md`. Phase 2 (infra) done; Phase 3 (first deploy) mostly done; Phase 4 (custom domain,
+data migration, cutover) not started. Old Supabase setup is still the live system for real clients.
+
+**Live:** `https://insureremind-pactbridge-g5bdcgegg2a9gahk.centralindia-01.azurewebsites.net` (healthz 200, login,
+admin, static, cron dry-run 200 / wrong token 403 all verified). Superuser `admin` exists on the Azure DB; the
+password is held by the owner, never in the repo. Azure DB holds only empty tables, no client data.
+
+| Resource | Name | Region / notes |
+|---|---|---|
+| Resource group | `rg-insureremind-prod` | metadata in West India (irrelevant) |
+| App Service plan / Web app | `asp-insureremind-prod` (B1 Linux) / `insureremind-pactbridge` | Central India; Python 3.12, startup `bash deploy/azure/startup.sh`, system identity, health check `/healthz` |
+| Postgres Flexible | `psql-insureremind-pactbridge` | **India South Central** (PG 17, B1ms); db/role/schema `insureremind` / `insureremind_app` |
+| Storage | `stinsureremindpactbridge`, container `documents` | **West India**; app identity = Storage Blob Data Contributor |
+| Key Vault | `kv-ir-pactbridge` (RBAC) | 6 secrets: SECRET-KEY, DATABASE-URL, OPENROUTER-API-KEY, EMAIL-HOST-PASSWORD, WHATSAPP-ACCESS-TOKEN, CRON-TOKEN; app identity = Secrets User |
+| Logic App | `logic-insureremind-reminders` | in RG `logic-insureremind-reminders_group` (portal-created); daily 09:00 IST, **Disabled** until go-live; alert `Reminder run failed` → action group `ag-insureremind` |
+| GitHub deploy | Entra app `gh-insureremind-deploy` | OIDC federated cred for `aamall00/InsureRemind` branch `main`; Website Contributor on the web app; repo variable `AZURE_WEBAPP_NAME` set, so **every push to `main` deploys** |
+
+**Lessons learned (apply when touching Azure):**
+- The web app was created with *secure unique default hostname* ON: the short `insureremind-pactbridge.azurewebsites.net`
+  does not exist and this cannot be changed later. `ALLOWED_HOSTS`/`CSRF_TRUSTED_ORIGINS`/Logic App URI must use the real
+  host (or the custom domain). A wrong host shows up as HTTP 400 (DisallowedHost), not a DNS error.
+- The Oryx build unpacks the app into `/tmp/<id>/` (venv `antenv`), not `/home/site/wwwroot`. In SSH:
+  `cd "$(dirname "$(ls -t /tmp/*/manage.py | head -1)")" && source antenv/bin/activate`. `az webapp ssh` is
+  interactive only; for one-off management commands, run them from the PC against Azure Postgres with a temporary
+  firewall rule for the PC's IP (the owner's ISP IP is dynamic) and delete the rule afterwards.
+- New az CLI: `az postgres flexible-server firewall-rule create --server-name <pg> --name <rule>` (old `--name`/`--rule-name` fails).
+- Postgres firewall: one rule per App Service outbound IPv4 (`app-1`..`app-31`); IPv6 is not supported. If the plan
+  or tier changes, the outbound IPs can change — re-sync the rules.
+- Metric alerts check at most every 1 hour (24 h lookback is fine for a daily run).
+- Azure CLI is installed on the owner's PC at `C:\Program Files\Microsoft SDKs\Azure\CLI2\wbin\az.cmd` (not on Git
+  Bash PATH; call it from PowerShell) and logged in as the subscription owner (personal Microsoft account).
+- The GitHub repo is **public**: never commit secrets, IPs of the owner, or client data; consider making it private.
+
+**Pending (in order):**
+1. **Custom domain `app.pactbridge.in`** (GoDaddy, registered 2026-11-10, on registry `client hold` until the owner
+   verifies contact details). DNS records for GoDaddy: CNAME `app` → the real azurewebsites host; TXT `asuid.app` →
+   the web app's `customDomainVerificationId`. Then: add the hostname, create a free managed certificate and bind it (SNI),
+   add the domain to `ALLOWED_HOSTS`/`CSRF_TRUSTED_ORIGINS` (keep the long host), and point the Logic App URI at it.
+2. **Region mismatch:** Postgres (India South Central) and storage (West India) are not in the app's region (Central India).
+   Both are still empty; recreate in Central India before the data migration if the owner agrees (decision pending).
+3. **Application Insights not created:** create `appi-insureremind` + workspace `log-insureremind` (30-day retention)
+   in Central India, then set `APPLICATIONINSIGHTS_CONNECTION_STRING` (currently removed). Fix `setup_telemetry()` first.
+4. **Phase 3 smoke test:** upload a dummy PDF (tests the OPENROUTER Key Vault reference and blob storage), review,
+   confirm, view/download/ZIP, check DocumentAccess rows and uuid blob names; delete the dummy data afterwards.
+5. Set the real `AGENCY_NAME`, `AGENT_NOTIFY_EMAIL`, `AGENT_NOTIFY_PHONE`; email/WhatsApp are still `console` backends.
+6. Optional tidy-ups: move the Logic App, action group and alert into `rg-insureremind-prod` (re-check the alert scope);
+   delete the stale Postgres rule `ClientIPAddress_2026-11-9_*`.
+7. Phase 4: data migration Supabase → Azure (pg_dump 17+), document copy to blob, enable the Logic App, cutover.

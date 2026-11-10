@@ -31,7 +31,7 @@ all in the **Central India (Pune)** region.
  └───────────────┬──────────────────────────────┘
                  │ TLS (sslmode=require)
                  ▼
- PostgreSQL Flexible Server — Burstable B1ms, PG 16, 32 GB, 7-day backups
+ PostgreSQL Flexible Server — Burstable B1ms, PG 17, 32 GB, 7-day backups
    database "insureremind", role "insureremind_app", schema "insureremind"
 
  Logic App (Consumption) — every day at 09:00 IST
@@ -240,7 +240,7 @@ Postgres `psql-insureremind-<agency>` (unique).
    - [ ] Lifecycle rule: delete previous versions older than 90 days.
    - [ ] Create a container named `documents`, access level **Private**.
 4. **PostgreSQL Flexible Server**
-   - [ ] Version **16** (or the same major version as Supabase, or newer), Burstable **B1ms**, 32 GB storage,
+   - [ ] Version **17** (Supabase runs PostgreSQL 17.11; a 17 dump cannot be restored into 16), Burstable **B1ms**, 32 GB storage,
          storage auto-grow on.
    - [ ] Backups: 7-day retention, locally redundant.
    - [ ] Authentication: PostgreSQL authentication. Admin user `iradmin` with a long random password stored in
@@ -351,7 +351,7 @@ Plan a quiet evening. Tell the users the app is read-only from the start time.
 - [ ] Ask users to stop uploading. Note the time.
 
 ### 6.2 Database: Supabase → Azure
-Run from your PC with PostgreSQL client tools whose version is **≥ the Supabase server version**:
+Run from your PC with PostgreSQL client tools version **17 or newer** (Supabase is 17.11):
 ```powershell
 # Export only the app schema, without Supabase-specific owners or grants
 pg_dump "postgres://insureremind_app.<ref>:<pw>@aws-0-ap-south-1.pooler.supabase.com:5432/postgres?sslmode=require" `
@@ -452,5 +452,5 @@ old setup and stop the Logic App, so the two systems don't both send reminders. 
 1. **Domain:** which domain or subdomain, and who manages its DNS?
 2. **GitHub:** is the repo on GitHub (needed for the Actions pipeline), or should deploys be done from your PC (zip deploy)?
 3. **Email provider:** keep the current SMTP provider (port 587) or move to Azure Communication Services?
-4. **Postgres version on Supabase:** check it with `select version();` and pick the same major version (or newer) on Azure.
+4. ~~**Postgres version on Supabase**~~ — checked 2026-11-09: PostgreSQL 17.11 → use 17 on Azure.
 5. **Key Vault:** use it (recommended), or plain app settings for a simpler first setup?
