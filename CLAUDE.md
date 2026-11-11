@@ -151,12 +151,14 @@ through the login-protected `policy_document` / `upload_file` views.
 - In tests, never call `.close()` on a streaming/File response — it fires `request_finished` and closes the
   DB connection (invisible on SQLite in-memory, fatal on Postgres). Consume `streaming_content` instead.
 
-## Azure status (as of 2026-11-10)
-Full checklist: `DEPLOY_AZURE.md`. Phase 2 (infra) done; Phase 3 (first deploy) mostly done; Phase 4 (custom domain,
-data migration, cutover) not started. Old Supabase setup is still the live system for real clients.
+## Azure status (as of 2026-11-11)
+Full checklist: `DEPLOY_AZURE.md`. Phase 2 (infra) done; Phase 3 (first deploy) mostly done; custom domain done;
+Phase 4 (data migration, cutover) not started. Old Supabase setup is still the live system for real clients.
 
-**Live:** `https://insureremind-pactbridge-g5bdcgegg2a9gahk.centralindia-01.azurewebsites.net` (healthz 200, login,
-admin, static, cron dry-run 200 / wrong token 403 all verified). Superuser `admin` exists on the Azure DB; the
+**Live:** `https://app.pactbridge.in` (custom domain, free App Service managed certificate, SNI) and the long host
+`https://insureremind-pactbridge-g5bdcgegg2a9gahk.centralindia-01.azurewebsites.net` (healthz 200, login,
+admin, static, cron dry-run 200 / wrong token 403 all verified). `ALLOWED_HOSTS` / `CSRF_TRUSTED_ORIGINS` list both
+hosts. The Logic App deliberately keeps calling the long host (it never changes and does not depend on DNS). Superuser `admin` exists on the Azure DB; the
 password is held by the owner, never in the repo. Azure DB holds only empty tables, no client data.
 
 | Resource | Name | Region / notes |
@@ -168,6 +170,12 @@ password is held by the owner, never in the repo. Azure DB holds only empty tabl
 | Key Vault | `kv-ir-pactbridge` (RBAC) | 6 secrets: SECRET-KEY, DATABASE-URL, OPENROUTER-API-KEY, EMAIL-HOST-PASSWORD, WHATSAPP-ACCESS-TOKEN, CRON-TOKEN; app identity = Secrets User |
 | Logic App | `logic-insureremind-reminders` | in RG `logic-insureremind-reminders_group` (portal-created); daily 09:00 IST, **Disabled** until go-live; alert `Reminder run failed` → action group `ag-insureremind` |
 | GitHub deploy | Entra app `gh-insureremind-deploy` | OIDC federated cred for `aamall00/InsureRemind` branch `main`; Website Contributor on the web app; repo variable `AZURE_WEBAPP_NAME` set, so **every push to `main` deploys** |
+| Brand website | Static Web App `swa-pactbridge-site` (Free) | East Asia (global CDN); serves `https://www.pactbridge.in` from repo `aamall00/pactbridge-site` (`site/`), deployed by GitHub Actions with secret `AZURE_STATIC_WEB_APPS_API_TOKEN` |
+| DNS | GoDaddy (registrar + DNS) | CNAME `app` → web app host, TXT `asuid.app` → verification id, CNAME `www` → SWA host; apex `pactbridge.in` forwarded (301) to `https://www.pactbridge.in` |
+
+**Domains:** PactBridge is the umbrella brand. `www.pactbridge.in` = brand landing page (edit `pactbridge-site/site/index.html`;
+`landing/index.html` in this repo is only a copy of the source and does not deploy). `www.pactbridge.in/insureremind` forwards
+to the page's `#insureremind` section. The app always stays on the `app` subdomain, never under a path.
 
 **Lessons learned (apply when touching Azure):**
 - The web app was created with *secure unique default hostname* ON: the short `insureremind-pactbridge.azurewebsites.net`
@@ -184,19 +192,32 @@ password is held by the owner, never in the repo. Azure DB holds only empty tabl
 - Azure CLI is installed on the owner's PC at `C:\Program Files\Microsoft SDKs\Azure\CLI2\wbin\az.cmd` (not on Git
   Bash PATH; call it from PowerShell) and logged in as the subscription owner (personal Microsoft account).
 - The GitHub repo is **public**: never commit secrets, IPs of the owner, or client data; consider making it private.
+- `az webapp config ssl create` for a managed certificate returns before the cert exists (and prints a harmless
+  deserialization traceback); `az webapp config ssl list` showed `[]` even when it existed. Get the thumbprint with
+  `az resource show --resource-type Microsoft.Web/certificates -n <hostname>`, then `ssl bind --ssl-type SNI`. After binding,
+  TLS is flaky for a few minutes (`SEC_E_WRONG_PRINCIPAL` on some front ends) until it propagates.
+- Static Web Apps: a `staticwebapp.config.json` redirect to a target containing `#` made the deploy step fail; use a small
+  forwarding page instead.
+- GoDaddy domain forwarding only redirects the bare apex (`pactbridge.in/` → www); it drops paths (`pactbridge.in/x` = 404).
+- The Logic App definition holds `X-Cron-Token` in plain text; anyone reading the workflow definition sees it.
 
 **Pending (in order):**
-1. **Custom domain `app.pactbridge.in`** (GoDaddy, registered 2026-11-10, on registry `client hold` until the owner
-   verifies contact details). DNS records for GoDaddy: CNAME `app` → the real azurewebsites host; TXT `asuid.app` →
-   the web app's `customDomainVerificationId`. Then: add the hostname, create a free managed certificate and bind it (SNI),
-   add the domain to `ALLOWED_HOSTS`/`CSRF_TRUSTED_ORIGINS` (keep the long host), and point the Logic App URI at it.
-2. **Region mismatch:** Postgres (India South Central) and storage (West India) are not in the app's region (Central India).
+1. **Move DNS to Azure DNS** (about $0.50/month) so the apex `pactbridge.in` points straight at the Static Web App and paths
+   like `pactbridge.in/insureremind` work. First ask whether email on `pactbridge.in` is used (MX/SPF/DKIM must be copied)
+   and get the full GoDaddy record list. Create zone `pactbridge.in` in `rg-insureremind-prod`; recreate `app`, `asuid.app`,
+   `www`, plus an apex alias record → `swa-pactbridge-site` and add the apex hostname on the SWA; the owner switches the
+   GoDaddy nameservers to the 4 Azure NS; remove the GoDaddy forward; check that both certificates still renew.
+2. **Rotate `CRON_TOKEN`** (its value was exposed in a chat transcript on 2026-11-11): new value in Key Vault `CRON-TOKEN`
+   and in the Logic App header; verify cron dry-run 200 with the new token and 403 with the old one.
+3. **Landing page placeholders:** contact phone/WhatsApp, email, office and the IRDAI registration number still read
+   "to be added" on `www.pactbridge.in`.
+4. **Region mismatch:** Postgres (India South Central) and storage (West India) are not in the app's region (Central India).
    Both are still empty; recreate in Central India before the data migration if the owner agrees (decision pending).
-3. **Application Insights not created:** create `appi-insureremind` + workspace `log-insureremind` (30-day retention)
+5. **Application Insights not created:** create `appi-insureremind` + workspace `log-insureremind` (30-day retention)
    in Central India, then set `APPLICATIONINSIGHTS_CONNECTION_STRING` (currently removed). Fix `setup_telemetry()` first.
-4. **Phase 3 smoke test:** upload a dummy PDF (tests the OPENROUTER Key Vault reference and blob storage), review,
+6. **Phase 3 smoke test:** upload a dummy PDF (tests the OPENROUTER Key Vault reference and blob storage), review,
    confirm, view/download/ZIP, check DocumentAccess rows and uuid blob names; delete the dummy data afterwards.
-5. Set the real `AGENCY_NAME`, `AGENT_NOTIFY_EMAIL`, `AGENT_NOTIFY_PHONE`; email/WhatsApp are still `console` backends.
-6. Optional tidy-ups: move the Logic App, action group and alert into `rg-insureremind-prod` (re-check the alert scope);
+7. Set the real `AGENCY_NAME`, `AGENT_NOTIFY_EMAIL`, `AGENT_NOTIFY_PHONE`; email/WhatsApp are still `console` backends.
+8. Optional tidy-ups: move the Logic App, action group and alert into `rg-insureremind-prod` (re-check the alert scope);
    delete the stale Postgres rule `ClientIPAddress_2026-11-9_*`.
-7. Phase 4: data migration Supabase → Azure (pg_dump 17+), document copy to blob, enable the Logic App, cutover.
+9. Phase 4: data migration Supabase → Azure (pg_dump 17+), document copy to blob, enable the Logic App, cutover.
