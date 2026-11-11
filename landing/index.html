@@ -1,0 +1,503 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>PactBridge</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<meta name="description" content="PactBridge: independent insurance advisory for motor, health and SME cover in India.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&family=Hanken+Grotesk:wght@400;500;600&family=JetBrains+Mono:wght@500&display=swap">
+<style>
+/* Layout: a dark "river" hero with a suspension-bridge drawing, then light bands for practices,
+   process, the InsureRemind tool panel, and contact. Bridge = the pact between client and insurer. */
+:root {
+  --bg: #F1F5F3;          /* paper with a green-teal bias */
+  --surface: #FFFFFF;
+  --fg: #10252B;          /* ink */
+  --muted: #4F6A6F;
+  --line: #D3DFDB;
+  --river: #0E2F36;       /* hero / tool band */
+  --river-2: #154149;
+  --on-river: #E9F1EE;
+  --on-river-muted: #A9C2BF;
+  --accent: #E39B12;      /* marigold */
+  --accent-ink: #8F5A00;  /* accent as text on light ground */
+  --on-accent: #1B1200;
+  --ok: #2E7D5B;
+  --warn: #B4540A;
+  --font-display: "Bricolage Grotesque", "Segoe UI", system-ui, sans-serif;
+  --font-body: "Hanken Grotesk", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "Cascadia Mono", Consolas, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0A181C; --surface: #11252A; --fg: #E4EDEA; --muted: #9BB3B0; --line: #1F3A40;
+    --river: #071215; --river-2: #0F262B; --on-river: #E9F1EE; --on-river-muted: #9DB7B4;
+    --accent: #F2B23E; --accent-ink: #F2B23E; --on-accent: #1B1200; --ok: #5CC497; --warn: #F08C3C;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0A181C; --surface: #11252A; --fg: #E4EDEA; --muted: #9BB3B0; --line: #1F3A40;
+  --river: #071215; --river-2: #0F262B; --on-river: #E9F1EE; --on-river-muted: #9DB7B4;
+  --accent: #F2B23E; --accent-ink: #F2B23E; --on-accent: #1B1200; --ok: #5CC497; --warn: #F08C3C;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html { scroll-behavior: smooth; }
+body {
+  margin: 0; background: var(--bg); color: var(--fg);
+  font: 400 1.0625rem/1.6 var(--font-body);
+  -webkit-font-smoothing: antialiased;
+}
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--river); }
+a { color: inherit; }
+h1, h2, h3 { font-family: var(--font-display); line-height: 1.08; margin: 0; text-wrap: balance; letter-spacing: -0.02em; }
+p { margin: 0; }
+:focus-visible { outline: 3px solid var(--accent); outline-offset: 3px; border-radius: 4px; }
+
+.wrap {
+  max-width: 1160px; margin: 0 auto;
+  padding-left: max(20px, env(safe-area-inset-left, 0px));
+  padding-right: max(20px, env(safe-area-inset-right, 0px));
+}
+.eyebrow {
+  font: 500 0.75rem/1 var(--font-mono); letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--accent-ink);
+}
+
+/* Buttons */
+.btn {
+  display: inline-flex; align-items: center; gap: 0.5em;
+  font: 600 0.98rem/1 var(--font-body); text-decoration: none;
+  padding: 0.95em 1.35em; border-radius: 999px; border: 1.5px solid transparent;
+  transition: transform .15s ease, background-color .15s ease, border-color .15s ease;
+}
+.btn:hover { transform: translateY(-1px); }
+.btn-accent { background: var(--accent); color: var(--on-accent); }
+.btn-accent:hover { background: color-mix(in srgb, var(--accent) 88%, white); }
+.btn-ghost { border-color: color-mix(in srgb, var(--on-river) 35%, transparent); color: var(--on-river); }
+.btn-ghost:hover { border-color: var(--on-river); }
+.btn .arrow { transition: transform .15s ease; }
+.btn:hover .arrow { transform: translateX(3px); }
+
+/* Header */
+.site-header {
+  position: sticky; top: env(safe-area-inset-top, 0px); z-index: 20;
+  background: color-mix(in srgb, var(--river) 92%, transparent);
+  backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+  border-bottom: 1px solid color-mix(in srgb, var(--on-river) 10%, transparent);
+  color: var(--on-river);
+}
+.nav { display: flex; align-items: center; gap: 28px; padding-block: 14px; }
+.brand { display: inline-flex; align-items: center; gap: 10px; text-decoration: none; font: 800 1.3rem/1 var(--font-display); letter-spacing: -0.02em; }
+.brand svg { width: 34px; height: 22px; flex: none; }
+.brand b { color: var(--accent); font-weight: 800; }
+.nav-links { display: flex; gap: 24px; margin-left: auto; list-style: none; padding: 0; margin-block: 0; }
+.nav-links a { text-decoration: none; color: var(--on-river-muted); font-weight: 500; font-size: 0.95rem; }
+.nav-links a:hover { color: var(--on-river); }
+.nav .btn { padding: 0.7em 1.1em; font-size: 0.9rem; }
+@media (max-width: 820px) { .nav-links { display: none; } .nav .btn { margin-left: auto; } }
+
+/* Hero */
+.hero { background: var(--river); color: var(--on-river); overflow: hidden; position: relative; }
+.hero::after { /* water shimmer under the deck */
+  content: ""; position: absolute; inset: auto 0 0 0; height: 38%;
+  background: repeating-linear-gradient(180deg, transparent 0 14px, color-mix(in srgb, var(--on-river) 5%, transparent) 14px 15px);
+  pointer-events: none;
+}
+.hero-grid {
+  display: grid; grid-template-columns: 1.05fr 1fr; gap: 48px; align-items: center;
+  padding-block: 72px 88px; position: relative; z-index: 1;
+}
+.hero .eyebrow { color: var(--accent); }
+.hero h1 { font-size: clamp(2.5rem, 5.6vw, 4.6rem); font-weight: 800; margin-top: 18px; }
+.hero h1 em { font-style: normal; color: var(--accent); }
+.hero .lede { margin-top: 22px; max-width: 34em; color: var(--on-river-muted); font-size: 1.15rem; }
+.hero-ctas { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 32px; }
+.lines { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 36px; list-style: none; padding: 0; }
+.lines li {
+  font: 500 0.78rem/1 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase;
+  padding: 8px 12px; border-radius: 999px; border: 1px solid color-mix(in srgb, var(--on-river) 22%, transparent);
+  color: var(--on-river-muted);
+}
+
+.bridge-art { position: relative; min-width: 0; }
+.bridge-art svg { width: 100%; height: auto; display: block; overflow: visible; }
+.bridge-art .cable, .bridge-art .tower, .bridge-art .deck, .bridge-art .hanger { fill: none; stroke-linecap: round; }
+.bridge-art .tower { stroke: var(--on-river); stroke-width: 6; }
+.bridge-art .deck { stroke: var(--on-river); stroke-width: 5; }
+.bridge-art .cable { stroke: var(--accent); stroke-width: 3; stroke-dasharray: 700; stroke-dashoffset: 0; animation: draw 1.8s .2s ease-out both; }
+.bridge-art .hanger { stroke: color-mix(in srgb, var(--on-river) 55%, transparent); stroke-width: 1.5; }
+.bridge-art .label { font: 500 11px var(--font-mono); letter-spacing: .12em; fill: var(--on-river-muted); }
+@keyframes draw { from { stroke-dashoffset: 700; } to { stroke-dashoffset: 0; } }
+
+.renewal-card {
+  position: absolute; right: 2%; bottom: -6%; width: min(300px, 78%);
+  background: var(--surface); color: var(--fg); border-radius: 14px; padding: 16px 18px;
+  box-shadow: 0 24px 50px -18px rgba(0,0,0,.55);
+  animation: rise .7s 1.1s ease-out both;
+}
+@keyframes rise { from { transform: translateY(12px); } to { transform: none; } }
+.renewal-card .top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.plate {
+  font: 500 0.85rem/1 var(--font-mono); letter-spacing: 0.06em;
+  padding: 5px 8px; border: 1.5px solid var(--fg); border-radius: 4px;
+}
+.days { font: 700 1.6rem/1 var(--font-display); color: var(--warn); font-variant-numeric: tabular-nums; }
+.days small { font: 500 0.7rem var(--font-mono); letter-spacing: .08em; color: var(--muted); margin-left: 4px; }
+.renewal-card .meta { margin-top: 10px; font-size: 0.86rem; color: var(--muted); }
+.renewal-card .meta strong { color: var(--fg); font-weight: 600; }
+.ticks { display: flex; gap: 6px; margin-top: 12px; list-style: none; padding: 0; }
+.ticks li {
+  flex: 1; text-align: center; font: 500 0.7rem/1 var(--font-mono); padding: 7px 0; border-radius: 6px;
+  background: color-mix(in srgb, var(--fg) 6%, transparent); color: var(--muted); font-variant-numeric: tabular-nums;
+}
+.ticks li.sent { background: color-mix(in srgb, var(--ok) 16%, transparent); color: var(--ok); }
+.ticks li.next { background: var(--accent); color: var(--on-accent); }
+
+@media (max-width: 900px) {
+  .hero-grid { grid-template-columns: 1fr; padding-block: 48px 96px; }
+  .bridge-art { max-width: 520px; }
+}
+
+/* Sections */
+section { padding-block: 96px; }
+.section-head { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; align-items: end; margin-bottom: 48px; }
+.section-head h2 { font-size: clamp(2rem, 3.8vw, 3rem); font-weight: 700; margin-top: 14px; }
+.section-head p { color: var(--muted); max-width: 32em; }
+@media (max-width: 760px) { .section-head { grid-template-columns: 1fr; } section { padding-block: 72px; } }
+
+/* Practices */
+.practices { display: grid; grid-template-columns: repeat(3, 1fr); gap: 0; border-top: 2px solid var(--fg); }
+.practice { padding: 32px 28px 8px 0; display: flex; flex-direction: column; gap: 14px; min-width: 0; }
+.practice + .practice { padding-left: 28px; border-left: 1px solid var(--line); }
+.practice .tag { font: 500 0.75rem/1 var(--font-mono); color: var(--accent-ink); letter-spacing: .1em; }
+.practice h3 { font-size: 1.9rem; font-weight: 700; }
+.practice p { color: var(--muted); }
+.practice ul { list-style: none; padding: 0; margin: 6px 0 0; display: grid; gap: 0; }
+.practice li { padding: 10px 0; border-top: 1px dashed var(--line); font-size: 0.97rem; display: flex; justify-content: space-between; gap: 12px; }
+.practice li span { color: var(--muted); font: 500 0.75rem/1.9 var(--font-mono); white-space: nowrap; }
+@media (max-width: 900px) {
+  .practices { grid-template-columns: 1fr; }
+  .practice, .practice + .practice { padding: 28px 0 8px; border-left: 0; }
+  .practice + .practice { border-top: 1px solid var(--line); }
+}
+
+/* Process */
+.process-band { background: var(--surface); border-block: 1px solid var(--line); }
+.steps { display: grid; grid-template-columns: repeat(5, 1fr); gap: 20px; list-style: none; padding: 0; margin: 0; counter-reset: step; position: relative; }
+.steps::before { content: ""; position: absolute; left: 0; right: 0; top: 19px; height: 2px; background: var(--line); }
+.steps li { counter-increment: step; position: relative; display: grid; gap: 10px; align-content: start; min-width: 0; }
+.steps li::before {
+  content: counter(step); width: 40px; height: 40px; border-radius: 50%;
+  display: grid; place-items: center; font: 700 1rem/1 var(--font-display);
+  background: var(--bg); border: 2px solid var(--fg); position: relative;
+}
+.steps li:last-child::before { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.steps h3 { font-size: 1.2rem; font-weight: 700; margin-top: 6px; }
+.steps p { color: var(--muted); font-size: 0.95rem; }
+@media (max-width: 900px) {
+  .steps { grid-template-columns: 1fr; gap: 28px; }
+  .steps::before { left: 19px; right: auto; top: 0; bottom: 0; width: 2px; height: auto; }
+  .steps li { grid-template-columns: 40px 1fr; column-gap: 18px; }
+  .steps li::before { grid-row: span 2; }
+  .steps h3 { margin-top: 8px; }
+}
+
+/* InsureRemind */
+.tool { background: var(--river); color: var(--on-river); }
+.tool-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 56px; align-items: center; }
+.tool .eyebrow { color: var(--accent); }
+.tool h2 { font-size: clamp(2.2rem, 4.4vw, 3.4rem); font-weight: 800; margin-top: 14px; }
+.tool h2 span { color: var(--accent); }
+.tool p.lede { color: var(--on-river-muted); margin-top: 18px; max-width: 32em; }
+.tool ul.feats { list-style: none; padding: 0; margin: 26px 0 32px; display: grid; gap: 12px; }
+.tool ul.feats li { display: grid; grid-template-columns: 22px 1fr; gap: 12px; color: var(--on-river); }
+.tool ul.feats svg { width: 22px; height: 22px; margin-top: 2px; }
+.tool .ctas { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; }
+.tool .note { font: 500 0.75rem var(--font-mono); color: var(--on-river-muted); letter-spacing: .06em; }
+
+.timeline { background: var(--river-2); border-radius: 18px; padding: 28px; border: 1px solid color-mix(in srgb, var(--on-river) 12%, transparent); min-width: 0; }
+.timeline .tl-head { display: flex; justify-content: space-between; gap: 12px; flex-wrap: wrap; font: 500 0.78rem var(--font-mono); color: var(--on-river-muted); letter-spacing: .08em; text-transform: uppercase; }
+.track { position: relative; margin: 34px 0 8px; height: 64px; }
+.track::before { content: ""; position: absolute; left: 0; right: 0; top: 18px; height: 2px; background: color-mix(in srgb, var(--on-river) 25%, transparent); }
+.pin { position: absolute; top: 0; transform: translateX(-50%); display: grid; justify-items: center; gap: 8px; }
+.pin i { width: 14px; height: 14px; margin-top: 12px; border-radius: 50%; background: var(--river-2); border: 2px solid var(--accent); }
+.pin b { font: 500 0.75rem var(--font-mono); color: var(--on-river); white-space: nowrap; font-variant-numeric: tabular-nums; }
+.pin.end i { background: var(--accent); width: 18px; height: 18px; margin-top: 10px; }
+.msgs { display: grid; gap: 10px; margin-top: 18px; }
+.msg { display: grid; grid-template-columns: auto 1fr; gap: 12px; align-items: start; padding: 12px 14px; border-radius: 12px; background: color-mix(in srgb, var(--on-river) 6%, transparent); font-size: 0.92rem; }
+.msg .ch { font: 500 0.68rem/1 var(--font-mono); letter-spacing: .08em; padding: 6px 8px; border-radius: 6px; background: var(--accent); color: var(--on-accent); }
+.msg .ch.mail { background: color-mix(in srgb, var(--on-river) 18%, transparent); color: var(--on-river); }
+.msg p { color: var(--on-river-muted); }
+.msg p strong { color: var(--on-river); font-weight: 600; }
+@media (max-width: 900px) { .tool-grid { grid-template-columns: 1fr; } }
+
+/* Why */
+.why { display: grid; grid-template-columns: repeat(4, 1fr); gap: 28px; }
+.why div { display: grid; gap: 8px; align-content: start; min-width: 0; }
+.why h3 { font-size: 1.15rem; font-weight: 700; }
+.why p { color: var(--muted); font-size: 0.96rem; }
+.why svg { width: 28px; height: 28px; color: var(--accent-ink); }
+@media (max-width: 900px) { .why { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 520px) { .why { grid-template-columns: 1fr; } }
+
+/* Contact */
+.contact { background: var(--surface); border-top: 1px solid var(--line); }
+.contact-grid { display: grid; grid-template-columns: 1.2fr 1fr; gap: 48px; align-items: start; }
+.contact h2 { font-size: clamp(2rem, 3.8vw, 3rem); font-weight: 700; margin-top: 14px; }
+.contact p.lede { color: var(--muted); margin-top: 16px; max-width: 30em; }
+.details { display: grid; gap: 0; border-top: 2px solid var(--fg); }
+.details div { display: grid; grid-template-columns: 120px 1fr; gap: 16px; padding: 16px 0; border-bottom: 1px solid var(--line); min-width: 0; }
+.details dt { font: 500 0.75rem/1.9 var(--font-mono); letter-spacing: .1em; text-transform: uppercase; color: var(--muted); }
+.details dd { margin: 0; font-weight: 500; overflow-wrap: anywhere; user-select: all; }
+.details .tbd { color: var(--muted); font-style: italic; font-weight: 400; user-select: auto; }
+@media (max-width: 820px) { .contact-grid { grid-template-columns: 1fr; } .details div { grid-template-columns: 1fr; gap: 4px; } }
+
+/* Footer */
+footer { background: var(--river); color: var(--on-river-muted); font-size: 0.88rem; }
+.foot { display: flex; flex-wrap: wrap; gap: 20px 40px; justify-content: space-between; padding-block: 40px; }
+.foot .brand { color: var(--on-river); }
+.foot a { color: var(--on-river); }
+.foot .legal { max-width: 46em; display: grid; gap: 8px; }
+.foot .legal strong { color: var(--on-river); font-weight: 600; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+  html { scroll-behavior: auto; }
+}
+</style>
+
+<header class="site-header">
+  <nav class="wrap nav" aria-label="Main">
+    <a class="brand" href="#top" aria-label="PactBridge home">
+      <svg viewBox="0 0 34 22" aria-hidden="true"><path d="M2 18 H32" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/><path d="M8 18 V4 M26 18 V4" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/><path d="M8 4 Q17 18 26 4" fill="none" stroke="#E39B12" stroke-width="2" stroke-linecap="round"/></svg>
+      Pact<b>Bridge</b>
+    </a>
+    <ul class="nav-links">
+      <li><a href="#cover">Motor</a></li>
+      <li><a href="#cover">Health</a></li>
+      <li><a href="#cover">SME</a></li>
+      <li><a href="#how">How we work</a></li>
+      <li><a href="#contact">Contact</a></li>
+    </ul>
+    <a class="btn btn-accent" href="https://app.pactbridge.in/">InsureRemind login <span class="arrow" aria-hidden="true">→</span></a>
+  </nav>
+</header>
+
+<main id="top">
+  <section class="hero" style="padding-block:0">
+    <div class="wrap hero-grid">
+      <div>
+        <p class="eyebrow">Insurance advisory · India</p>
+        <h1>Cover that holds up <em>on the day you claim.</em></h1>
+        <p class="lede">PactBridge helps families, vehicle owners and small businesses choose the right motor, health and commercial insurance, then stays with them through every renewal and every claim.</p>
+        <div class="hero-ctas">
+          <a class="btn btn-accent" href="#contact">Talk to an advisor <span class="arrow" aria-hidden="true">→</span></a>
+          <a class="btn btn-ghost" href="https://app.pactbridge.in/">Open InsureRemind</a>
+        </div>
+        <ul class="lines" aria-label="Lines of business">
+          <li>Motor</li><li>Health</li><li>SME &amp; Commercial</li>
+        </ul>
+      </div>
+
+      <div class="bridge-art" aria-hidden="true">
+        <svg viewBox="0 0 480 260">
+          <path class="cable" d="M0 165 Q70 150 120 60 Q240 230 360 60 Q410 150 480 165"/>
+          <g class="hanger">
+            <line x1="150" y1="97" x2="150" y2="200"/><line x1="170" y1="116" x2="170" y2="200"/>
+            <line x1="190" y1="130" x2="190" y2="200"/><line x1="210" y1="140" x2="210" y2="200"/>
+            <line x1="230" y1="144" x2="230" y2="200"/><line x1="250" y1="144" x2="250" y2="200"/>
+            <line x1="270" y1="140" x2="270" y2="200"/><line x1="290" y1="130" x2="290" y2="200"/>
+            <line x1="310" y1="116" x2="310" y2="200"/><line x1="330" y1="97" x2="330" y2="200"/>
+            <line x1="40" y1="160" x2="40" y2="200"/><line x1="80" y1="139" x2="80" y2="200"/>
+            <line x1="400" y1="139" x2="400" y2="200"/><line x1="440" y1="160" x2="440" y2="200"/>
+          </g>
+          <path class="tower" d="M120 238 V52 M360 238 V52"/>
+          <path class="deck" d="M0 200 H480"/>
+          <text class="label" x="0" y="226">YOU</text>
+          <text class="label" x="480" y="226" text-anchor="end">INSURER</text>
+        </svg>
+
+        <div class="renewal-card">
+          <div class="top">
+            <span class="plate">MH 12 AB 1234</span>
+            <span class="days">33<small>DAYS</small></span>
+          </div>
+          <p class="meta"><strong>Comprehensive</strong> · NCB 35% · expires 14-Dec-2026</p>
+          <ul class="ticks" aria-label="Reminder schedule">
+            <li class="next">30 d</li><li>15 d</li><li>7 d</li><li>1 d</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="cover">
+    <div class="wrap">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">What we cover</p>
+          <h2>Three practices, one advisor who knows your file.</h2>
+        </div>
+        <p>We compare plans across insurers, read the wordings so you don't have to, and explain the exclusions before you pay, not after you claim.</p>
+      </div>
+
+      <div class="practices">
+        <article class="practice">
+          <span class="tag">MOTOR</span>
+          <h3>Cars, bikes &amp; fleets</h3>
+          <p>Private and commercial vehicles, new purchases and renewals, with your no-claim bonus carried across insurers.</p>
+          <ul>
+            <li>Comprehensive &amp; own-damage <span>OD</span></li>
+            <li>Third-party liability <span>TP</span></li>
+            <li>NCB transfer &amp; protection <span>0–50%</span></li>
+            <li>Zero-dep, RTI, engine add-ons <span>ADD-ON</span></li>
+          </ul>
+        </article>
+        <article class="practice">
+          <span class="tag">HEALTH</span>
+          <h3>Individuals &amp; families</h3>
+          <p>Plans sized to your city's hospital costs, with waiting periods, room-rent caps and co-pays explained in plain words.</p>
+          <ul>
+            <li>Family floater &amp; individual <span>BASE</span></li>
+            <li>Super top-up cover <span>TOP-UP</span></li>
+            <li>Senior citizen plans <span>60+</span></li>
+            <li>Portability with continuity <span>PORT</span></li>
+          </ul>
+        </article>
+        <article class="practice">
+          <span class="tag">SME</span>
+          <h3>Shops, offices &amp; factories</h3>
+          <p>Property, people and liability cover for small and growing businesses, set up once and reviewed every year.</p>
+          <ul>
+            <li>Bharat Sookshma / Laghu Udyam <span>FIRE</span></li>
+            <li>Group health for employees <span>GMC</span></li>
+            <li>Marine cargo &amp; transit <span>MARINE</span></li>
+            <li>Workmen's compensation <span>WC</span></li>
+          </ul>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section id="how" class="process-band">
+    <div class="wrap">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">How we work</p>
+          <h2>From first call to the next renewal.</h2>
+        </div>
+        <p>The same advisor handles your policy from the first conversation onward, so you never have to explain your history twice.</p>
+      </div>
+      <ol class="steps">
+        <li><h3>Understand</h3><p>We learn what you own, who depends on you and what a bad year would cost.</p></li>
+        <li><h3>Compare</h3><p>Quotes from several insurers, set side by side on cover, not just on price.</p></li>
+        <li><h3>Place</h3><p>We handle the proposal, inspection and documents, and check the policy copy once it's issued.</p></li>
+        <li><h3>Claim support</h3><p>When something happens, we coordinate with the insurer and surveyor on your behalf.</p></li>
+        <li><h3>Renew</h3><p>Reminders go out well before expiry, so your cover and NCB never lapse.</p></li>
+      </ol>
+    </div>
+  </section>
+
+  <section id="insureremind" class="tool">
+    <div class="wrap tool-grid">
+      <div>
+        <p class="eyebrow">For our agents · InsureRemind</p>
+        <h2>No renewal <span>slips through.</span></h2>
+        <p class="lede">InsureRemind is our in-house portal. Agents upload a client's policy copy, the details are read automatically, and expiry reminders go to the vehicle owner and the agent on WhatsApp and email.</p>
+        <ul class="feats">
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" stroke="var(--accent)"/></svg><span>Reads insurer, policy number, premium, NCB and expiry from the PDF</span></li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" stroke="var(--accent)"/></svg><span>Reminders 30, 15, 7 and 1 day before expiry</span></li>
+          <li><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 6 9 17l-5-5" stroke="var(--accent)"/></svg><span>Full policy history per vehicle, with Excel and PDF reports</span></li>
+        </ul>
+        <div class="ctas">
+          <a class="btn btn-accent" href="https://app.pactbridge.in/">Sign in to InsureRemind <span class="arrow" aria-hidden="true">→</span></a>
+          <span class="note">Authorised users only</span>
+        </div>
+      </div>
+
+      <div class="timeline" aria-label="Example reminder schedule">
+        <div class="tl-head"><span>Example: MH 12 AB 1234</span><span>Expiry 14-Dec-2026</span></div>
+        <div class="track">
+          <div class="pin" style="left:4%"><i></i><b>14-Nov</b></div>
+          <div class="pin" style="left:38%"><i></i><b>29-Nov</b></div>
+          <div class="pin" style="left:68%"><i></i><b>07-Dec</b></div>
+          <div class="pin end" style="left:93%"><i></i><b>14-Dec</b></div>
+        </div>
+        <div class="msgs">
+          <div class="msg"><span class="ch">WHATSAPP</span><p><strong>30 days left.</strong> Your Comprehensive policy for MH12AB1234 expires on 14-Dec-2026. Reply to renew with your advisor.</p></div>
+          <div class="msg"><span class="ch mail">EMAIL</span><p><strong>Agent copy.</strong> 4 renewals due this week, 1 needs a fresh quote.</p></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="wrap">
+      <div class="section-head">
+        <div>
+          <p class="eyebrow">Why PactBridge</p>
+          <h2>An advisor on your side of the table.</h2>
+        </div>
+      </div>
+      <div class="why">
+        <div>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 6h18M3 12h18M3 18h12"/></svg>
+          <h3>Several insurers</h3><p>We compare across companies, so the recommendation fits you rather than a single insurer's target.</p>
+        </div>
+        <div>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9z"/><path d="M14 3v6h6M8 13h8M8 17h5"/></svg>
+          <h3>Wordings explained</h3><p>Exclusions, sub-limits and deductibles are explained to you before you buy.</p>
+        </div>
+        <div>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          <h3>Claims handled</h3><p>We file, follow up and escalate with the insurer until the claim is settled.</p>
+        </div>
+        <div>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></svg>
+          <h3>Renewals on time</h3><p>Automatic reminders keep your cover continuous and your NCB intact.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="contact" class="contact">
+    <div class="wrap contact-grid">
+      <div>
+        <p class="eyebrow">Contact</p>
+        <h2>Send us your current policy. We'll tell you what it really covers.</h2>
+        <p class="lede">A free review of your motor, health or business policy, with no obligation to switch.</p>
+      </div>
+      <dl class="details">
+        <div><dt>Phone / WhatsApp</dt><dd class="tbd">To be added</dd></div>
+        <div><dt>Email</dt><dd class="tbd">To be added</dd></div>
+        <div><dt>Office</dt><dd class="tbd">To be added</dd></div>
+        <div><dt>Hours</dt><dd>Mon–Sat, 10:00–19:00 IST</dd></div>
+      </dl>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <div class="wrap foot">
+    <div style="display:grid;gap:12px;align-content:start">
+      <a class="brand" href="#top">
+        <svg viewBox="0 0 34 22" aria-hidden="true"><path d="M2 18 H32" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/><path d="M8 18 V4 M26 18 V4" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"/><path d="M8 4 Q17 18 26 4" fill="none" stroke="#E39B12" stroke-width="2" stroke-linecap="round"/></svg>
+        Pact<b>Bridge</b>
+      </a>
+      <span>Agents: <a href="https://app.pactbridge.in/">InsureRemind login</a></span>
+    </div>
+    <div class="legal">
+      <p><strong>IRDAI registration:</strong> [licence number and category to be added]</p>
+      <p>Insurance is the subject matter of solicitation. For details on risk factors, terms and conditions, please read the policy wording and sales brochure carefully before concluding a sale.</p>
+      <p>© 2026 PactBridge · pactbridge.in</p>
+    </div>
+  </div>
+</footer>
+
+</html>
